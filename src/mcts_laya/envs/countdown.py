@@ -121,8 +121,9 @@ class CountdownEnv(SingleAgentEnvironment):
         self.show_history = show_history
         if action_detail not in ("move", "outcome"):
             raise ValueError("action_detail must be 'move' or 'outcome'")
-        # "move": `50 * 2 = 100`; "outcome": also the numbers left and the distance to the
-        # target, so the model compares outcomes instead of redoing the arithmetic itself.
+        # "move": `50 * 2 = 100`; "outcome": `50 * 2 = 100 (gap 54)`, the distance from the
+        # target to the closest number left, so the model compares outcomes instead of
+        # redoing the arithmetic itself.
         self.action_detail = action_detail
 
     # --- problems -------------------------------------------------------------------------
@@ -182,7 +183,7 @@ class CountdownEnv(SingleAgentEnvironment):
         if self.action_detail == "outcome":
             left = apply_move(state.numbers, action)
             gap = min(abs(n - state.target) for n in left)
-            text += f" -> {' '.join(map(str, left))} (gap {gap})"
+            text += f" (gap {gap})"
         return text
 
     def state_key(self, state: CountdownState):
