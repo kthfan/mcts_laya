@@ -1,0 +1,53 @@
+# Phase 0 / algebra: reduced-scale run of the real laya-multilingual checkpoint on CPU
+# (~2 h on 4 cores). Small eval set -> noisy; the full-scale config is configs/phase0/algebra.yaml (GPU).
+name: phase0-algebra-laya-cpu-smoke
+output_dir: runs/phase0/algebra-laya-cpu-smoke
+seed: 0
+iterations: 4
+save_checkpoints: last
+save_half: true
+
+env:
+  name: algebra
+  params: {templates: [bracket, fraction, two_brackets, two_fractions], max_steps: 10, gamma: 0.9, success_floor: 0.5}
+
+model:
+  checkpoint: models/laya/multilingual
+  device: cpu
+  max_len: 512
+  head_max_len: 256
+
+evaluator: {max_rows: 16, prior_temperature: 1.0}
+
+search:                 # used for self-play; PUCT is more robust than Gumbel while the value head is weak
+  name: puct
+  params: {num_simulations: 16, batch_size: 4, c_puct: 1.5, dirichlet_alpha: 0.3, dirichlet_fraction: 0.25}
+
+teacher: {enabled: true, problems: 150, explore: 0.3, epochs: 2}
+
+selfplay:
+  episodes_per_iteration: 16
+  config: {max_moves: 10, add_noise: true, action_selection: search, value_target: outcome,
+           policy_target_temperature: 0.5, failed_policy_weight: 0.0}
+
+train:
+  replay_capacity: 20000
+  samples_per_iteration: null
+  teacher_mix: 0.5
+  config: {epochs: 1, batch_size: 8, lr_encoder: 3.0e-5, lr_head: 2.0e-4, rl_weight: 0.0,
+           freeze_encoder: false, augment_option_order: true}
+
+eval:
+  problems: 30
+  seed: 12345
+  max_moves: 10
+  searches:
+    - {label: greedy, name: greedy}
+    - {label: puct16, name: puct, params: {num_simulations: 16, batch_size: 4}}
+  baselines:
+    - {label: uniform-puct16, name: puct, evaluator: uniform, params: {num_simulations: 16, batch_size: 4}}
+    - {label: uniform-gumbel16, name: gumbel, evaluator: uniform, params: {num_simulations: 16, max_considered_actions: 8}}
+    - {label: rollout-puct16, name: puct, evaluator: rollout, params: {num_simulations: 16}}
+
+gate: {enabled: false, metric: puct16.reward, tolerance: 0.02}
+milestone: {search_label: puct16, greedy_label: greedy, baseline_label: uniform-puct16, metric: reward}

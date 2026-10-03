@@ -94,14 +94,19 @@ class LayaEvaluator(Evaluator):
         )
 
     @torch.no_grad()
-    def _forward(self, items: List[dict]) -> np.ndarray:
-        out = []
-        for start in range(0, len(items), self.max_rows):
-            batch = collate_items([items[start:start + self.max_rows]], self.agent.tok.pad_token_id)
+    def _forward(self, items: List[dict]) -> List[np.ndarray]:
+        # Rows are grouped by length so short value rows are not padded to the long policy rows
+        # they would otherwise share a batch with; results come back in the original order.
+        order = sorted(range(len(items)), key=lambda i: len(items[i]["ids"]))
+        out: List[Optional[np.ndarray]] = [None] * len(items)
+        for start in range(0, len(order), self.max_rows):
+            idx = order[start:start + self.max_rows]
+            batch = collate_items([[items[i] for i in idx]], self.agent.tok.pad_token_id)
             logits, _ = self.agent._infer(batch)
-            out.extend(logits.float().cpu().numpy())
-            self.rows_evaluated += len(batch["qtype"])
-        return out
+            for i, row in zip(idx, logits.float().cpu().numpy()):
+                out[i] = row
+            self.rows_evaluated += len(idx)
+        return out  # type: ignore[return-value]
 
     def evaluate(self, env: Environment, states: Sequence[Any], actions: Sequence[List[Any]]) -> List[EvalResult]:
         results: List[Optional[EvalResult]] = [None] * len(states)
