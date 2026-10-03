@@ -5,6 +5,7 @@
 - 研究與候選問題評估：[`candidate_problems.md`](candidate_problems.md)
 - 大目標：[`ROADMAP.md`](ROADMAP.md)
 - 目前進度：[`TODO.md`](TODO.md)
+- Phase 0 結果：[`docs/phase0_report.md`](docs/phase0_report.md)
 
 ## 環境建立
 
@@ -25,6 +26,7 @@ scripts/setup_env.sh --download    # 再下載 laya-multilingual 權重到 model
 
 ```bash
 .venv/bin/python -m pytest                                        # 單元與整合測試（用微型模型，約 20 秒）
+.venv/bin/mcts-laya run configs/phase0/countdown_cpu_smoke.yaml  # Phase 0：真權重縮小版（CPU 約 1.5 小時）
 .venv/bin/mcts-laya run configs/phase0/countdown_tiny.yaml        # Phase 0：Countdown，微型模型，離線
 .venv/bin/mcts-laya run configs/phase0/algebra_tiny.yaml          # Phase 0：解一元一次方程，微型模型
 .venv/bin/mcts-laya run configs/phase0/countdown.yaml             # 同上，用真正的 Laya 權重

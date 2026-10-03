@@ -6,7 +6,7 @@
 
 ---
 
-## Phase 0：基礎建設與管線驗證　🟡
+## Phase 0：基礎建設與管線驗證　✅（報告：[`docs/phase0_report.md`](docs/phase0_report.md)）
 
 **目標**：打通「teacher 冷啟動 → MCTS self-play → 軟目標 → Laya 微調 → 校準 → 評估」整個迴圈，並在兩個便宜、可完美驗證的問題上確認它真的會讓模型進步。
 
@@ -21,16 +21,19 @@
 | 訓練器：soft CE + RLCD、選項順序擴增、溫度校準、輸出 Laya checkpoint | ✅ |
 | 微型 Laya 相容模型（離線 / CPU 開發與測試） | ✅ |
 | 微型模型上跑完兩個任務的 Phase 0 實驗 | ✅ |
-| **以真正的 Laya 權重跑 Phase 0** | ⏸ 容器無法連到 huggingface.co |
+| 以真正的 Laya 權重（multilingual）跑 Phase 0：CPU 縮小版 | ✅ |
+| 完整規模（評估 100 題、self-play 每輪 64 局）的真權重實驗 | ⬜ 需要 GPU |
 
 **里程碑（每個任務都要通過）**
 1. Laya+MCTS 的評估成功率 / reward 隨迭代上升
 2. Laya+MCTS 勝過 Laya greedy（不搜尋）
 3. Laya+MCTS 勝過同預算、均勻先驗的 MCTS（不用 Laya）
 
+**結果**：Countdown（真 Laya）三項全過，0.93 vs 均勻 0.30；代數（微型模型，弱 warm start 與從零開始）三項全過；代數（真 Laya）warm start 後即達最優解。真 Laya 從零開始的代數 4 輪內只過第 1 項，需要更多迭代。
+
 ---
 
-## Phase 1：文字代理主線任務　⬜（6–8 週）
+## Phase 1：文字代理主線任務　⬜（6–8 週，下一個目標）
 
 **目標**：在真正的文字環境上，證明「小型 System 1 模型 + 搜尋」能在成本與延遲上勝過 LLM agent。
 
