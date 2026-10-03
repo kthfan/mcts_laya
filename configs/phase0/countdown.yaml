@@ -1,0 +1,50 @@
+# Phase 0 / Countdown with a real Laya checkpoint (download with `mcts-laya download`).
+name: phase0-countdown-laya
+output_dir: runs/phase0/countdown-laya
+seed: 0
+iterations: 6
+save_checkpoints: last
+save_half: true
+
+env:
+  name: countdown
+  params: {n_numbers: 4, target_range: [10, 200], min_solution_steps: 2}
+
+model:
+  checkpoint: models/laya/multilingual
+  device: null          # auto: cuda > mps > cpu
+  max_len: 512
+  head_max_len: 384     # up to ~21 candidate moves per position
+
+evaluator: {max_rows: 64, prior_temperature: 1.0}
+
+search:                 # used for self-play
+  name: gumbel
+  params: {num_simulations: 16, max_considered_actions: 8}
+
+teacher: {enabled: true, problems: 300, explore: 0.3, epochs: 2}
+
+selfplay:
+  episodes_per_iteration: 64
+  config: {max_moves: 10, add_noise: true, action_selection: search, value_target: outcome}
+
+train:
+  replay_capacity: 20000
+  samples_per_iteration: null
+  teacher_mix: 0.5
+  config: {epochs: 1, batch_size: 16, lr_encoder: 2.0e-5, lr_head: 1.0e-4, rl_weight: 0.0,
+           freeze_encoder: false, augment_option_order: true}
+
+eval:
+  problems: 100
+  seed: 12345
+  max_moves: 10
+  searches:
+    - {label: greedy, name: greedy}
+    - {label: gumbel16, name: gumbel, params: {num_simulations: 16, max_considered_actions: 8}}
+  baselines:
+    - {label: uniform-gumbel16, name: gumbel, evaluator: uniform, params: {num_simulations: 16, max_considered_actions: 8}}
+    - {label: rollout-puct16, name: puct, evaluator: rollout, params: {num_simulations: 16}}
+
+gate: {enabled: false, metric: gumbel16.reward, tolerance: 0.02}
+milestone: {search_label: gumbel16, greedy_label: greedy, baseline_label: uniform-gumbel16, metric: reward}

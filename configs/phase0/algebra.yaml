@@ -1,0 +1,50 @@
+# Phase 0 / linear equations (SymPy-verified rewrite steps) with a real Laya checkpoint.
+name: phase0-algebra-laya
+output_dir: runs/phase0/algebra-laya
+seed: 0
+iterations: 6
+save_checkpoints: last
+save_half: true
+
+env:
+  name: algebra
+  params: {templates: [bracket, fraction, two_brackets, two_fractions], max_steps: 10, gamma: 0.9}
+
+model:
+  checkpoint: models/laya/multilingual
+  device: null
+  max_len: 512
+  head_max_len: 256
+
+evaluator: {max_rows: 64, prior_temperature: 1.0}
+
+search:
+  name: gumbel
+  params: {num_simulations: 16, max_considered_actions: 8}
+
+teacher: {enabled: true, problems: 300, explore: 0.3, epochs: 2}
+
+selfplay:
+  episodes_per_iteration: 64
+  config: {max_moves: 10, add_noise: true, action_selection: search, value_target: outcome}
+
+train:
+  replay_capacity: 20000
+  samples_per_iteration: null
+  teacher_mix: 0.5
+  config: {epochs: 1, batch_size: 16, lr_encoder: 2.0e-5, lr_head: 1.0e-4, rl_weight: 0.0,
+           freeze_encoder: false, augment_option_order: true}
+
+eval:
+  problems: 100
+  seed: 12345
+  max_moves: 10
+  searches:
+    - {label: greedy, name: greedy}
+    - {label: gumbel16, name: gumbel, params: {num_simulations: 16, max_considered_actions: 8}}
+  baselines:
+    - {label: uniform-gumbel16, name: gumbel, evaluator: uniform, params: {num_simulations: 16, max_considered_actions: 8}}
+    - {label: rollout-puct16, name: puct, evaluator: rollout, params: {num_simulations: 16}}
+
+gate: {enabled: false, metric: gumbel16.reward, tolerance: 0.02}
+milestone: {search_label: gumbel16, greedy_label: greedy, baseline_label: uniform-gumbel16, metric: reward}
