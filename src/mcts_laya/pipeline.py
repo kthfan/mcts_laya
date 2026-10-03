@@ -43,6 +43,9 @@ class AlphaZeroLoop:
             yaml.safe_dump(config_to_dict(cfg), f, sort_keys=False, allow_unicode=True)
         self.py_rng = random.Random(cfg.seed)
         self.np_rng = np.random.default_rng(cfg.seed)
+        import torch
+
+        torch.manual_seed(cfg.seed)  # training noise (dropout, RLCD sampling) must be reproducible
         self.env = ENVIRONMENTS.build(cfg.env.name, **cfg.env.params)
 
         m = cfg.model

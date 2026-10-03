@@ -24,7 +24,9 @@ search:                 # used for self-play; PUCT is more robust than Gumbel wh
   name: puct
   params: {num_simulations: 16, batch_size: 4, c_puct: 1.5, dirichlet_alpha: 0.3, dirichlet_fraction: 0.25}
 
-teacher: {enabled: true, problems: 1000, explore: 0.3, epochs: 4}
+# A deliberately weak warm start: with 1000 problems the tiny model is already near-optimal
+# and self-play has no headroom to show.
+teacher: {enabled: true, problems: 150, explore: 0.3, epochs: 2}
 
 selfplay:
   episodes_per_iteration: 64
