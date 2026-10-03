@@ -187,6 +187,7 @@ class LinearEquationEnv(SingleAgentEnvironment):
         templates: Sequence[str] = ("bracket", "fraction", "two_brackets", "two_fractions"),
         max_steps: int = 10,
         gamma: float = 0.9,
+        success_floor: float = 0.5,
         coef_range: int = 9,
         shuffle_terms: bool = True,
         verify_with_sympy: bool = True,
@@ -198,6 +199,7 @@ class LinearEquationEnv(SingleAgentEnvironment):
         self.shuffle_terms = shuffle_terms
         self.max_steps = max_steps
         self.gamma = gamma
+        self.success_floor = success_floor
         self.coef_range = coef_range
         self.verify_with_sympy = verify_with_sympy
 
@@ -343,7 +345,16 @@ class LinearEquationEnv(SingleAgentEnvironment):
         value = state.rhs[0].coef if state.rhs else Fraction(0)
         if state.original and value != state.solution:
             raise AssertionError(f"unsound rewrite: {state.original} solved as x = {value}")
-        return float(self.gamma ** state.steps)
+        return self.solved_reward(state.steps)
+
+    def solved_reward(self, steps: int) -> float:
+        """Reward for solving in `steps` moves: at least `success_floor`, more when shorter.
+
+        The floor keeps every solution clearly above failure (reward 0). Without it a late
+        solution is worth about as much as failing, and a slightly optimistic value network
+        makes the search postpone finishing until the step limit runs out.
+        """
+        return float(self.success_floor + (1.0 - self.success_floor) * self.gamma ** steps)
 
     # --- text -----------------------------------------------------------------------------
     def state_text(self, state: AlgebraState) -> str:

@@ -8,7 +8,7 @@ save_half: true
 
 env:
   name: algebra
-  params: {templates: [bracket, fraction, two_brackets, two_fractions], max_steps: 10, gamma: 0.9}
+  params: {templates: [bracket, fraction, two_brackets, two_fractions], max_steps: 10, gamma: 0.9, success_floor: 0.5}
 
 model:
   checkpoint: models/tiny
@@ -20,15 +20,16 @@ model:
 
 evaluator: {max_rows: 64, prior_temperature: 1.0}
 
-search:
-  name: gumbel
-  params: {num_simulations: 16, max_considered_actions: 8}
+search:                 # used for self-play; PUCT is more robust than Gumbel while the value head is weak
+  name: puct
+  params: {num_simulations: 16, batch_size: 4, c_puct: 1.5, dirichlet_alpha: 0.3, dirichlet_fraction: 0.25}
 
-teacher: {enabled: true, problems: 300, explore: 0.3, epochs: 8}
+teacher: {enabled: true, problems: 1000, explore: 0.3, epochs: 4}
 
 selfplay:
   episodes_per_iteration: 64
-  config: {max_moves: 10, add_noise: true, action_selection: search, value_target: outcome}
+  config: {max_moves: 10, add_noise: true, action_selection: search, value_target: outcome,
+           policy_target_temperature: 0.5, failed_policy_weight: 0.0}
 
 train:
   replay_capacity: 20000
@@ -43,10 +44,12 @@ eval:
   max_moves: 10
   searches:
     - {label: greedy, name: greedy}
+    - {label: puct16, name: puct, params: {num_simulations: 16, batch_size: 4}}
     - {label: gumbel16, name: gumbel, params: {num_simulations: 16, max_considered_actions: 8}}
   baselines:
+    - {label: uniform-puct16, name: puct, evaluator: uniform, params: {num_simulations: 16, batch_size: 4}}
     - {label: uniform-gumbel16, name: gumbel, evaluator: uniform, params: {num_simulations: 16, max_considered_actions: 8}}
     - {label: rollout-puct16, name: puct, evaluator: rollout, params: {num_simulations: 16}}
 
-gate: {enabled: false, metric: gumbel16.reward, tolerance: 0.02}
-milestone: {search_label: gumbel16, greedy_label: greedy, baseline_label: uniform-gumbel16, metric: reward}
+gate: {enabled: false, metric: puct16.reward, tolerance: 0.02}
+milestone: {search_label: puct16, greedy_label: greedy, baseline_label: uniform-puct16, metric: reward}

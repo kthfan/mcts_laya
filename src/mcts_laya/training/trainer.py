@@ -74,6 +74,7 @@ class LayaTrainer:
             except SequenceTooLong:
                 continue
             p_item["target"] = [float(s.policy[i]) for i in order]  # slot order
+            p_item["weight"] = float(s.policy_weight)
             vq = value_question(s.value_instruction, s.value_criteria)
             v_item = encode_question(tok, s.state_text, vq, self.max_len, self.head_max_len)
             p_true = min(max((s.value + 1.0) / 2.0, 0.0), 1.0)
@@ -112,11 +113,12 @@ class LayaTrainer:
         logits = logits.float().masked_fill(~mask, -1e4)
         ce = -(target * torch.log_softmax(logits, -1)).sum(-1)
         is_value = (qtype == QTYPES["noul"]).float()
-        w = self.cfg.value_weight * is_value + self.cfg.policy_weight * (1 - is_value)
+        row_w = torch.tensor([m.get("weight", 1.0) for m in batch["meta"]], device=dev, dtype=torch.float32)
+        w = (self.cfg.value_weight * is_value + self.cfg.policy_weight * (1 - is_value)) * row_w
         loss = (w * ce).sum() / w.sum().clamp_min(1e-9)
         out = {
             "loss": loss,
-            "policy_ce": (ce * (1 - is_value)).sum() / (1 - is_value).sum().clamp_min(1),
+            "policy_ce": (ce * (1 - is_value) * row_w).sum() / ((1 - is_value) * row_w).sum().clamp_min(1e-9),
             "value_ce": (ce * is_value).sum() / is_value.sum().clamp_min(1),
         }
         if self.cfg.rl_weight > 0:

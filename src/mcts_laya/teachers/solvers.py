@@ -85,4 +85,4 @@ class AlgebraTeacher(OracleTeacher):
             return -1.0, []
         child_d = [dist.get(env.canonical_key(env.step(state, a))) for a in actions]
         best = [i for i, cd in enumerate(child_d) if cd is not None and cd == d - 1]
-        return 2.0 * env.gamma ** (state.steps + d) - 1.0, best
+        return 2.0 * env.solved_reward(state.steps + d) - 1.0, best

@@ -68,12 +68,12 @@ def test_algebra_every_step_preserves_the_solution():
 
 
 def test_algebra_solved_state_and_reward():
-    env = LinearEquationEnv(gamma=0.9)
+    env = LinearEquationEnv(gamma=0.9, success_floor=0.5)
     s = AlgebraState((X(2),), (C(6),), steps=2, solution=3, original="2x = 6")
     (div,) = [a for a in env.legal_actions(s) if a.kind == "divide"]
     t = env.step(s, div)
     assert env.is_solved(t) and env.is_terminal(t)
-    assert env.terminal_reward(t) == pytest.approx(0.9 ** 3)
+    assert env.terminal_reward(t) == pytest.approx(0.5 + 0.5 * 0.9 ** 3)
     assert env.action_text(s, div) == "divide both sides by 2"
 
 

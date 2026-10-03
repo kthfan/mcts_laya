@@ -19,6 +19,7 @@ class Sample:
     value_instruction: str
     value_criteria: Dict[str, str]
     meta: Dict = field(default_factory=dict)
+    policy_weight: float = 1.0  # scales this sample's policy loss (0 = train the value only)
 
     def to_json(self) -> str:
         return json.dumps(asdict(self), ensure_ascii=False)

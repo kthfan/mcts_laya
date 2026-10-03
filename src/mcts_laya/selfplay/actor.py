@@ -24,6 +24,12 @@ class SelfPlayConfig:
     # Value target: "outcome" (z), "root" (search value) or "mix" ((1-lam) z + lam root).
     value_target: str = "outcome"
     value_mix: float = 0.5
+    # Policy target = search policy ** (1 / policy_target_temperature), renormalised. Values < 1
+    # sharpen the flat visit distributions that small simulation budgets produce.
+    policy_target_temperature: float = 1.0
+    # Policy-loss weight for positions from unsuccessful episodes (Expert-Iteration-style
+    # filtering for single-agent tasks; the value is always trained).
+    failed_policy_weight: float = 1.0
 
 
 @dataclass
@@ -79,7 +85,12 @@ def episode_to_samples(env: Environment, ep: Episode, cfg: Optional[SelfPlayConf
     cfg = cfg or SelfPlayConfig()
     final_player = env.current_player(ep.final_state)
     out = []
+    pw = 1.0 if ep.success else cfg.failed_policy_weight
     for rec in ep.steps:
+        pol = np.asarray(rec.result.policy, dtype=np.float64)
+        if cfg.policy_target_temperature != 1.0 and pol.sum() > 0:
+            pol = pol ** (1.0 / max(cfg.policy_target_temperature, 1e-6))
+            pol = pol / pol.sum()
         z = ep.final_value if rec.player == final_player else -ep.final_value
         if cfg.value_target == "root":
             v = rec.result.root_value
@@ -90,11 +101,12 @@ def episode_to_samples(env: Environment, ep: Episode, cfg: Optional[SelfPlayConf
         out.append(Sample(
             state_text=env.state_text(rec.state),
             action_texts=[env.action_text(rec.state, a) for a in rec.result.actions],
-            policy=[float(p) for p in rec.result.policy],
+            policy=[float(p) for p in pol],
             value=float(v),
             policy_instruction=env.policy_instruction,
             value_instruction=env.value_instruction,
             value_criteria=dict(env.value_criteria),
             meta=dict(meta or {}, env=env.name, source="selfplay"),
+            policy_weight=pw,
         ))
     return out
