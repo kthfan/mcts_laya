@@ -109,6 +109,7 @@ class CountdownEnv(SingleAgentEnvironment):
         min_solution_steps: int = 2,
         use_all: bool = False,
         show_history: bool = False,
+        action_detail: str = "outcome",
     ):
         if n_numbers < 2:
             raise ValueError("n_numbers must be at least 2")
@@ -118,6 +119,11 @@ class CountdownEnv(SingleAgentEnvironment):
         self.min_solution_steps = min_solution_steps
         self.use_all = use_all
         self.show_history = show_history
+        if action_detail not in ("move", "outcome"):
+            raise ValueError("action_detail must be 'move' or 'outcome'")
+        # "move": `50 * 2 = 100`; "outcome": also the numbers left and the distance to the
+        # target, so the model compares outcomes instead of redoing the arithmetic itself.
+        self.action_detail = action_detail
 
     # --- problems -------------------------------------------------------------------------
     def sample_problem(self, rng: random.Random) -> CountdownState:
@@ -172,7 +178,12 @@ class CountdownEnv(SingleAgentEnvironment):
         return text
 
     def action_text(self, state: CountdownState, action: CountdownAction) -> str:
-        return self._move_text(action)
+        text = self._move_text(action)
+        if self.action_detail == "outcome":
+            left = apply_move(state.numbers, action)
+            gap = min(abs(n - state.target) for n in left)
+            text += f" -> {' '.join(map(str, left))} (gap {gap})"
+        return text
 
     def state_key(self, state: CountdownState):
         return (state.numbers, state.target)

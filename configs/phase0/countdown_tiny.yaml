@@ -8,15 +8,15 @@ save_half: true
 
 env:
   name: countdown
-  params: {n_numbers: 4, target_range: [10, 200], min_solution_steps: 2}
+  params: {n_numbers: 4, target_range: [10, 200], min_solution_steps: 2, action_detail: outcome}
 
 model:
   checkpoint: models/tiny
   build_tiny: true      # random tiny Laya-compatible model, built on first use (no Hub access)
   tiny_params: {hidden_size: 128, num_layers: 4, num_heads: 4, head_layers: 2}
   device: null          # auto: cuda > mps > cpu
-  max_len: 512
-  head_max_len: 384     # up to ~21 candidate moves per position
+  max_len: 704
+  head_max_len: 576     # up to ~21 candidate moves with their outcomes per position
 
 evaluator: {max_rows: 64, prior_temperature: 1.0}
 
