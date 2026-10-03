@@ -34,8 +34,10 @@ train:
   replay_capacity: 20000
   samples_per_iteration: null
   teacher_mix: 0.5
-  config: {epochs: 1, batch_size: 8, lr_encoder: 3.0e-5, lr_head: 2.0e-4, rl_weight: 0.0,
-           freeze_encoder: false, augment_option_order: true}
+  # Countdown rows are ~460 tokens: full fine-tuning at batch 8 ran out of 15 GB RAM on CPU.
+  config: {epochs: 1, batch_size: 4, lr_encoder: 3.0e-5, lr_head: 2.0e-4, rl_weight: 0.0,
+           freeze_encoder: false, freeze_embeddings: true, gradient_checkpointing: true,
+           augment_option_order: true}
 
 eval:
   problems: 30

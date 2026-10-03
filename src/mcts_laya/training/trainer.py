@@ -38,6 +38,10 @@ class TrainConfig:
     rl_sigma: float = 0.2
     grad_clip: float = 1.0
     freeze_encoder: bool = False
+    # Freeze the token embeddings (mmBERT's 256k-token table is ~60% of laya-multilingual's
+    # parameters; its gradients and Adam state dominate training memory).
+    freeze_embeddings: bool = False
+    gradient_checkpointing: bool = False  # recompute encoder and head activations in backward
     augment_option_order: bool = True
     calibration_fraction: float = 0.1
     calibration_max: int = 400
@@ -85,12 +89,21 @@ class LayaTrainer:
     # --- optimisation -------------------------------------------------------------------
     def _make_optimizer(self):
         model = self.agent.model
-        enc = [p for n, p in model.named_parameters() if n.startswith("encoder.")]
-        head = [p for n, p in model.named_parameters() if not n.startswith("encoder.")]
-        for p in enc:
-            p.requires_grad_(not self.cfg.freeze_encoder)
+        if self.cfg.gradient_checkpointing:
+            model.encoder.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
+            model.head_checkpointing = True
+        emb = {id(p) for p in model.encoder.get_input_embeddings().parameters()}
+        enc, head = [], []
+        for n, p in model.named_parameters():
+            if not n.startswith("encoder."):
+                head.append(p)
+                continue
+            trainable = not self.cfg.freeze_encoder and not (self.cfg.freeze_embeddings and id(p) in emb)
+            p.requires_grad_(trainable)
+            if trainable:
+                enc.append(p)
         groups = [{"params": head, "lr": self.cfg.lr_head}]
-        if not self.cfg.freeze_encoder:
+        if enc:
             groups.append({"params": enc, "lr": self.cfg.lr_encoder})
         return torch.optim.AdamW(groups, weight_decay=self.cfg.weight_decay)
 

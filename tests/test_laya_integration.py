@@ -2,6 +2,7 @@ import random
 
 import numpy as np
 import pytest
+import torch
 
 from mcts_laya.envs import CountdownEnv, LinearEquationEnv
 from mcts_laya.evaluators import LayaEvaluator
@@ -66,6 +67,20 @@ def test_training_reduces_loss_and_checkpoint_roundtrips(tiny_checkpoint, tmp_pa
     p2 = LayaEvaluator(reloaded, cache_size=0).evaluate(env, [s], [a])[0]
     np.testing.assert_allclose(p1.priors, p2.priors, atol=1e-5)
     assert p1.value == pytest.approx(p2.value, abs=1e-5)
+
+
+def test_memory_saving_options(tiny_checkpoint):
+    import laya
+
+    agent = laya.load(tiny_checkpoint, device="cpu")
+    samples = CountdownTeacher(CountdownEnv()).generate(random.Random(2), 5)
+    trainer = LayaTrainer(agent, TrainConfig(freeze_embeddings=True, gradient_checkpointing=True,
+                                             calibration_fraction=0))
+    emb = agent.model.encoder.get_input_embeddings().weight
+    before = emb.detach().clone()
+    m = trainer.train(samples)
+    assert np.isfinite(m["loss"])
+    assert not emb.requires_grad and torch.equal(before, emb.detach())
 
 
 def test_rlcd_term_runs(tiny_checkpoint):
