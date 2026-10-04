@@ -35,6 +35,29 @@ def _cmd_tw_games(args) -> None:
         print(f"{level}: {len(m['games'].get('train', []))} train / {len(m['games'].get('eval', []))} eval -> {d}")
 
 
+def _viz_context(args):
+    from .viz.context import VizContext
+
+    if args.run:
+        return VizContext.from_run(args.run, checkpoint=args.checkpoint, device=args.device)
+    return VizContext.from_config(args.config, args.set, checkpoint=args.checkpoint, device=args.device)
+
+
+def _cmd_viz(args) -> None:
+    from .viz.report import build_report, write_report
+
+    ctx = _viz_context(args)
+    data = build_report(ctx, n_problems=args.problems, methods=args.methods or None, max_tree_nodes=args.max_tree_nodes)
+    out = args.out or (str(ctx.run_dir / "viz.html") if ctx.run_dir else "viz.html")
+    print(write_report(out, data))
+
+
+def _cmd_serve(args) -> None:
+    from .viz.server import serve
+
+    serve(_viz_context(args), host=args.host, port=args.port)
+
+
 def _cmd_run(args) -> None:
     from .config import load_config
     from .pipeline import AlphaZeroLoop
@@ -103,6 +126,28 @@ def main(argv=None) -> None:
     r.add_argument("--set", nargs="*", default=[], metavar="KEY=VALUE",
                    help="override config values, e.g. --set iterations=2 search.params.num_simulations=8")
     r.set_defaults(func=_cmd_run)
+
+    def viz_source(p):
+        src = p.add_mutually_exclusive_group(required=True)
+        src.add_argument("--run", help="experiment output dir (uses its config, metrics and final checkpoint)")
+        src.add_argument("--config", help="experiment YAML (no learning curves)")
+        p.add_argument("--set", nargs="*", default=[], metavar="KEY=VALUE")
+        p.add_argument("--checkpoint", default=None, help="override the checkpoint to load")
+        p.add_argument("--device", default=None)
+
+    v = sub.add_parser("viz", help="static HTML report: replays, search trees, comparisons, learning curves")
+    viz_source(v)
+    v.add_argument("--problems", type=int, default=4)
+    v.add_argument("--methods", nargs="*", default=[], help="method labels (default: all eval searches, baselines, teacher)")
+    v.add_argument("--max-tree-nodes", type=int, default=250)
+    v.add_argument("--out", default=None, help="output .html (default: <run>/viz.html)")
+    v.set_defaults(func=_cmd_viz)
+
+    sv = sub.add_parser("serve", help="live visualiser in the browser (search step by step, play yourself)")
+    viz_source(sv)
+    sv.add_argument("--host", default="127.0.0.1")
+    sv.add_argument("--port", type=int, default=8765)
+    sv.set_defaults(func=_cmd_serve)
 
     b = sub.add_parser("bench", help="measure evaluator throughput")
     b.add_argument("--checkpoint", required=True)

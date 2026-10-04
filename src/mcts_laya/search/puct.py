@@ -93,4 +93,5 @@ class PUCTSearch(Searcher):
             root_value=root.q,
             selected=int(selected),
             num_simulations=sims,
+            extra={"root": root},
         )

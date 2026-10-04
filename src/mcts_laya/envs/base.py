@@ -80,6 +80,14 @@ class Environment(ABC):
         """Whether a terminal state counts as solved (for reporting)."""
         return self.terminal_value(state) > 0
 
+    def render_data(self, state: Any) -> Dict[str, Any]:
+        """JSON-serialisable description of `state` for the visualisation front end.
+
+        `kind` selects the front-end panel; environments without a dedicated panel fall back to
+        showing the state text.
+        """
+        return {"kind": "text", "text": self.state_text(state)}
+
     # --- utilities ------------------------------------------------------------------------
     def iter_texts(self, rng: random.Random, n_problems: int = 200) -> Iterator[str]:
         """Texts produced by random play; used to build tokenizers for local test models."""

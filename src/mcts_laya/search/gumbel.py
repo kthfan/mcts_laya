@@ -132,6 +132,7 @@ class GumbelSearch(Searcher):
             root_value=float(improved @ completed),
             selected=selected,
             num_simulations=used,
+            extra={"root": root, "considered": [int(a) for a in remaining]},
         )
 
 
@@ -154,4 +155,5 @@ class PriorGreedySearch(Searcher):
             root_value=v,
             selected=int(np.argmax(root.priors)),
             num_simulations=0,
+            extra={"root": root},
         )

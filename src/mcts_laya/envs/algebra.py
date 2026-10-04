@@ -378,6 +378,11 @@ class LinearEquationEnv(SingleAgentEnvironment):
             return f"divide both sides by {fmt_num(action.value)}"
         return "swap the two sides"
 
+    def render_data(self, state: AlgebraState):
+        return {"kind": "algebra", "lhs": render_side(state.lhs), "rhs": render_side(state.rhs),
+                "steps": state.steps, "max_steps": self.max_steps, "original": state.original,
+                "solved": self.is_solved(state)}
+
     def state_key(self, state: AlgebraState):
         return (state.lhs, state.rhs, state.steps)
 

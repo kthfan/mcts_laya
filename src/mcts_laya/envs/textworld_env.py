@@ -50,14 +50,19 @@ class TWState:
 
 
 class GameRunner:
-    """One live TextWorld environment for one game, driven by replaying action histories."""
+    """One live TextWorld environment for one game, driven by replaying action histories.
 
-    def __init__(self, path: str):
+    `with_facts=True` also tracks the world facts TextWorld's renderer needs (visualisation only;
+    search and training use runners without them).
+    """
+
+    def __init__(self, path: str, with_facts: bool = False):
         import textworld
 
         infos = textworld.EnvInfos(objective=True, description=True, inventory=True, feedback=True,
                                    admissible_commands=True, policy_commands=True, score=True,
-                                   max_score=True, won=True, lost=True)
+                                   max_score=True, won=True, lost=True, facts=with_facts, game=with_facts,
+                                   last_action=with_facts)
         self.env = textworld.start(path, infos)
         self.history: Optional[Tuple[str, ...]] = None
         self.gs = None
@@ -83,12 +88,19 @@ class GameRunner:
             won=bool(gs["won"]), lost=bool(gs["lost"]),
         )
 
+    def game_state(self, history: Tuple[str, ...]):
+        """The raw TextWorld GameState after `history` (replays like `observe`)."""
+        self.observe(history)
+        return self.gs
+
     def close(self) -> None:
         self.env.close()
 
 
 # --- text cleaning ----------------------------------------------------------------------------
-_BOILERPLATE = re.compile(r"TextWorld|^(Here is|You do|Got that|Good!|That's it)", re.I)
+# Greetings name the game at the end of the sentence ("... entered TextWorld!", "... round of
+# TextWorld?") or as "the TextWorld today"; entity names ("the TextWorld chest") must survive.
+_BOILERPLATE = re.compile(r"\bTextWorld( today\b[^.!?]*)?[.!?]*$|^(Here is|You do|Got that|Good!|That's it)", re.I)
 
 
 def clean_objective(text: str) -> str:
@@ -153,6 +165,7 @@ class TextWorldEnv(SingleAgentEnvironment):
         self.show_visited = show_visited
         self.max_open_games = max_open_games
         self._runners: "OrderedDict[str, GameRunner]" = OrderedDict()
+        self._viz_runners: "OrderedDict[str, GameRunner]" = OrderedDict()
 
     # --- game access ------------------------------------------------------------------------
     def _runner(self, game: str) -> GameRunner:
@@ -245,3 +258,43 @@ class TextWorldEnv(SingleAgentEnvironment):
 
     def state_key(self, state: TWState):
         return (state.game, state.history)
+
+    # --- visualisation ----------------------------------------------------------------------
+    def world_map(self, state: TWState) -> Dict:
+        """Rooms, exits and items from TextWorld's own renderer (`textworld.render`).
+
+        This is the full map for the human viewer; the agent only ever sees `state_text`.
+        """
+        from textworld.render import load_state_from_game_state
+
+        r = self._viz_runners.get(state.game)
+        if r is None:
+            r = self._viz_runners[state.game] = GameRunner(str(self.level_dir / state.game), with_facts=True)
+            if len(self._viz_runners) > 8:
+                self._viz_runners.popitem(last=False)[1].close()
+        rendered = load_state_from_game_state(r.game_state(state.history))
+        here = room_name(state.obs.description).lower()
+        visited = {v.lower() for v in state.visited}
+
+        def names(items):
+            out = []
+            for it in items or []:
+                if it.get("name"):
+                    inner = names(it.get("contents"))
+                    out.append(it["name"] + (f" ({', '.join(inner)})" if inner else ""))
+            return out
+
+        rooms = [{"name": rm["name"], "x": rm["position"][0], "y": rm["position"][1],
+                  "player": rm["name"].lower() == here, "visited": rm["name"].lower() in visited,
+                  "items": names(rm.get("items"))} for rm in rendered["rooms"]]
+        edges = sorted({tuple(sorted((c["src"], c["dest"]))) for c in rendered["connections"]})
+        return {"rooms": rooms, "edges": [list(e) for e in edges], "inventory": names(rendered.get("inventory"))}
+
+    def render_data(self, state: TWState) -> Dict:
+        d = {"kind": "textworld", "goal": clean_objective(state.obs.objective), "text": self.state_text(state),
+             "steps": state.steps, "max_steps": self.max_steps, "won": state.obs.won}
+        try:
+            d["map"] = self.world_map(state)
+        except Exception as e:  # the map is a convenience; never fail a trace because of it
+            d["map_error"] = f"{type(e).__name__}: {e}"
+        return d

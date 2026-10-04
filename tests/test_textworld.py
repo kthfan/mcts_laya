@@ -34,6 +34,12 @@ def test_pool_manifest_has_disjoint_splits(tw_root):
 def test_text_cleaning():
     assert clean_objective("Welcome to TextWorld! Here is your task for today. First, go south. Got that? Good!") == \
         "First, go south."
+    # objects can be named after the game: those sentences are the task, not the greeting
+    assert clean_objective("Hey, thanks for coming over to the TextWorld today, there is something I need you to do "
+                           "for me. Then, take the TextWorld latchkey from the crate.") == \
+        "Then, take the TextWorld latchkey from the crate."
+    assert clean_objective("Who's got a virtual machine and is about to play through an profound round of TextWorld? "
+                           "You do! Your objective is to unlock the TextWorld box.") == "Your objective is to unlock the TextWorld box."
     assert clean_room("-= Spare Room =-\nYou are   here.") == "Spare Room. You are here."
     assert clean_feedback("\nYou can't go that way.\n\n\n>    -= Cookhouse =-0/2") == "You can't go that way."
 

@@ -186,5 +186,9 @@ class CountdownEnv(SingleAgentEnvironment):
             text += f" (gap {gap})"
         return text
 
+    def render_data(self, state: CountdownState):
+        return {"kind": "countdown", "target": state.target, "numbers": list(state.numbers),
+                "history": list(state.history), "use_all": self.use_all}
+
     def state_key(self, state: CountdownState):
         return (state.numbers, state.target)
