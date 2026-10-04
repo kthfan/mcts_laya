@@ -21,6 +21,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]
+textworld = ["textworld>=1.6"]
 
 [project.scripts]
 mcts-laya = "mcts_laya.cli:main"
@@ -31,3 +32,4 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+filterwarnings = ["ignore::UserWarning:jericho.*", "ignore:.*UnsupportedGameWarning.*"]

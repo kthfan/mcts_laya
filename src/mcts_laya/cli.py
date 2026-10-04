@@ -24,6 +24,17 @@ def _cmd_make_tiny(args) -> None:
                                 max_len=args.max_len, head_max_len=args.head_max_len))
 
 
+def _cmd_tw_games(args) -> None:
+    from .envs.textworld_games import LEVELS, generate_pool
+
+    for level in args.level:
+        d = generate_pool(args.out, level, args.train, args.eval, workers=args.workers, seed=args.seed)
+        import json
+
+        m = json.loads((d / "manifest.json").read_text())
+        print(f"{level}: {len(m['games'].get('train', []))} train / {len(m['games'].get('eval', []))} eval -> {d}")
+
+
 def _cmd_run(args) -> None:
     from .config import load_config
     from .pipeline import AlphaZeroLoop
@@ -77,6 +88,15 @@ def main(argv=None) -> None:
     t.add_argument("--max-len", type=int, default=512)
     t.add_argument("--head-max-len", type=int, default=384)
     t.set_defaults(func=_cmd_make_tiny)
+
+    g = sub.add_parser("tw-games", help="generate TextWorld game pools for curriculum levels")
+    g.add_argument("--level", nargs="+", default=["L1"], help="level names, e.g. L1 L2 L2-goal L3-goal")
+    g.add_argument("--out", default="data/textworld")
+    g.add_argument("--train", type=int, default=200)
+    g.add_argument("--eval", type=int, default=50)
+    g.add_argument("--workers", type=int, default=4)
+    g.add_argument("--seed", type=int, default=0)
+    g.set_defaults(func=_cmd_tw_games)
 
     r = sub.add_parser("run", help="run an AlphaZero experiment from a YAML config")
     r.add_argument("config")

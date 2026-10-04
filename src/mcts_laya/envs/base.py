@@ -32,8 +32,17 @@ class Environment(ABC):
 
     # --- dynamics -------------------------------------------------------------------------
     @abstractmethod
-    def sample_problem(self, rng: random.Random) -> Any:
-        """Draw an initial state."""
+    def sample_problem(self, rng: random.Random, split: str = "train") -> Any:
+        """Draw an initial state from `split` ("train" or "eval").
+
+        Procedurally generated environments may ignore the split (fresh problems are as good as
+        held-out ones); environments with a fixed pool (TextWorld, ALFWorld) must keep the
+        evaluation games disjoint from the training games.
+        """
+
+    def sample_problems(self, rng: random.Random, n: int, split: str = "train") -> List[Any]:
+        """`n` initial states; pool-based environments override this to avoid repeats."""
+        return [self.sample_problem(rng, split) for _ in range(n)]
 
     @abstractmethod
     def legal_actions(self, state: Any) -> List[Any]:

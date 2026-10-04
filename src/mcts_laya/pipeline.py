@@ -61,7 +61,7 @@ class AlphaZeroLoop:
         self.trainer = LayaTrainer(self.agent, cfg.train.config)
         self.replay = ReplayBuffer(cfg.train.replay_capacity)
         eval_rng = random.Random(cfg.eval.seed)
-        self.eval_problems = [self.env.sample_problem(eval_rng) for _ in range(cfg.eval.problems)]
+        self.eval_problems = self.env.sample_problems(eval_rng, cfg.eval.problems, split="eval")
         self.history: List[Dict[str, Any]] = []
         self.best_metric: Optional[float] = None
         self.best_state: Optional[dict] = None
@@ -145,7 +145,7 @@ class AlphaZeroLoop:
         t0, rows0 = time.time(), self.evaluator.rows_evaluated
         successes, lengths, n_samples = [], [], 0
         for i in range(sp.episodes_per_iteration):
-            ep = play_episode(self.env, searcher, self.env.sample_problem(self.py_rng), self.np_rng, sp.config)
+            ep = play_episode(self.env, searcher, self.env.sample_problem(self.py_rng, "train"), self.np_rng, sp.config)
             samples = episode_to_samples(self.env, ep, sp.config, meta={"iteration": iteration})
             self.replay.add(samples)
             successes.append(ep.success)

@@ -40,7 +40,7 @@ class OracleTeacher(ABC):
     def generate(self, rng: random.Random, n_problems: int) -> List[Sample]:
         env, out = self.env, []
         for _ in range(n_problems):
-            state = env.sample_problem(rng)
+            state = env.sample_problem(rng, "train")
             for _ in range(self.max_moves):
                 if env.is_terminal(state):
                     break

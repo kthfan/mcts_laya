@@ -245,7 +245,7 @@ class LinearEquationEnv(SingleAgentEnvironment):
             return (G(Fraction(1, k), X(1), C(a)), G(Fraction(1, m), X(1), C(b))), (C(r + t),)
         raise ValueError(f"unknown template {name!r}")
 
-    def sample_problem(self, rng: random.Random) -> AlgebraState:
+    def sample_problem(self, rng: random.Random, split: str = "train") -> AlgebraState:
         for _ in range(1000):
             s = rng.randint(-self.coef_range, self.coef_range)
             lhs, rhs = self._template(rng, rng.choice(self.templates), s)

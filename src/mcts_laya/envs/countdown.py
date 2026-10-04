@@ -127,7 +127,7 @@ class CountdownEnv(SingleAgentEnvironment):
         self.action_detail = action_detail
 
     # --- problems -------------------------------------------------------------------------
-    def sample_problem(self, rng: random.Random) -> CountdownState:
+    def sample_problem(self, rng: random.Random, split: str = "train") -> CountdownState:
         lo, hi = self.target_range
         for _ in range(10_000):
             numbers = tuple(sorted(rng.choice(self.number_pool) for _ in range(self.n_numbers)))
