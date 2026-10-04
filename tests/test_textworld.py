@@ -98,3 +98,21 @@ def test_laya_evaluator_on_textworld(env, tiny_agent):
     s = env.sample_problem(random.Random(8))
     (r,) = ev.evaluate(env, [s], [env.legal_actions(s)])
     assert r.priors.sum() == pytest.approx(1.0) and -1 <= r.value <= 1
+
+
+def test_pipeline_runs_on_textworld(tw_root, tiny_checkpoint, tmp_path):
+    import json
+
+    from mcts_laya.config import load_config
+    from mcts_laya.pipeline import AlphaZeroLoop
+
+    cfg = load_config("configs/textworld/l1_cpu.yaml", [
+        f"output_dir={tmp_path}", f"model.checkpoint={tiny_checkpoint}", f"env.params.game_dir={tw_root}",
+        "iterations=1", "teacher.problems=2", "teacher.epochs=1", "selfplay.episodes_per_iteration=1",
+        "eval.problems=2", "search.params.num_simulations=4", "eval.searches=[{label: greedy, name: greedy}]",
+        "eval.baselines=[]", "milestone.search_label=greedy", "save_checkpoints=none", "model.max_len=512",
+        "train.config.gradient_checkpointing=false",
+    ])
+    AlphaZeroLoop(cfg).run()
+    kinds = {json.loads(line)["kind"] for line in open(tmp_path / "metrics.jsonl")}
+    assert {"eval", "train", "selfplay"} <= kinds

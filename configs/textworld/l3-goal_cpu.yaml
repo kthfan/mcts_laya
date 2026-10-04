@@ -1,0 +1,55 @@
+# Phase 1a / TextWorld L3-goal: 8 rooms, 8-step quests, objective names only the final step
+# Reduced-scale run of laya-multilingual on CPU (~6-8 h). Generate the pool first:
+#   mcts-laya tw-games --level L3-goal --train 150 --eval 40 --out data/textworld
+name: phase1a-textworld-l3-goal-laya-cpu
+output_dir: runs/phase1a/l3-goal-laya-cpu
+seed: 0
+iterations: 2
+save_checkpoints: last
+save_half: true
+
+env:
+  name: textworld
+  params: {game_dir: data/textworld, level: L3-goal, gamma: 0.9, success_floor: 0.5,
+           drop_commands: [look, inventory, examine], history_len: 6}
+
+model:
+  checkpoint: models/laya/multilingual
+  device: cpu
+  max_len: 768          # state text is ~200-450 tokens
+  head_max_len: 256     # up to ~22 commands after filtering
+
+evaluator: {max_rows: 16, prior_temperature: 1.0}
+
+search:
+  name: puct
+  params: {num_simulations: 16, batch_size: 4, c_puct: 1.5, dirichlet_alpha: 0.3, dirichlet_fraction: 0.25}
+
+teacher: {enabled: true, problems: 80, explore: 0.3, epochs: 2}
+
+selfplay:
+  episodes_per_iteration: 12
+  config: {max_moves: 50, add_noise: true, action_selection: search, value_target: outcome,
+           policy_target_temperature: 0.5, failed_policy_weight: 0.0}
+
+train:
+  replay_capacity: 20000
+  samples_per_iteration: null
+  teacher_mix: 0.5
+  config: {epochs: 1, batch_size: 4, lr_encoder: 3.0e-5, lr_head: 2.0e-4, rl_weight: 0.0,
+           freeze_encoder: false, freeze_embeddings: true, gradient_checkpointing: true,
+           augment_option_order: true}
+
+eval:
+  problems: 20
+  seed: 12345
+  max_moves: 50
+  searches:
+    - {label: greedy, name: greedy}
+    - {label: puct16, name: puct, params: {num_simulations: 16, batch_size: 4}}
+  baselines:
+    - {label: uniform-puct16, name: puct, evaluator: uniform, params: {num_simulations: 16, batch_size: 4}}
+    - {label: rollout-puct16, name: puct, evaluator: rollout, params: {num_simulations: 16}}
+
+gate: {enabled: false, metric: puct16.reward, tolerance: 0.02}
+milestone: {search_label: puct16, greedy_label: greedy, baseline_label: uniform-puct16, metric: reward}
