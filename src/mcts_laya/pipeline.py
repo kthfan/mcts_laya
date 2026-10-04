@@ -254,5 +254,5 @@ class AlphaZeroLoop:
         if checks:
             rows = [{"check": c["check"], "value": c["value"], "result": "PASS" if c["pass"] else "FAIL"}
                     for c in checks]
-            lines += ["## Phase 0 milestone checks", "", format_table(rows, ["check", "value", "result"]), ""]
+            lines += ["## Milestone checks", "", format_table(rows, ["check", "value", "result"]), ""]
         (self.out / "summary.md").write_text("\n".join(lines))
