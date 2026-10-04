@@ -34,14 +34,39 @@
 - [ ] 多 seed 或成對統計檢定（目前的 30 題評估，差距 < 0.05 算雜訊）
 - [ ] 比較 `english` 與 `multilingual` checkpoint 的學習效率
 
-## 下一個目標：Phase 1 前置工作
-- [ ] **決定 Phase 1 的環境：ALFWorld 或 WebShop**（需要使用者決定）
+## 目前目標：Phase 1a（TextWorld）
+
+### 1a.1 介面與 adapter
+- [ ] `Environment.sample_problem(rng, split)`、`sample_problems(rng, n, split)`；pipeline 的評估改用 `split="eval"`
+- [ ] `TextWorldEnv`：狀態 = (遊戲, 動作歷史) + 觀測快照；`GameRunner` 用 reset + 前綴重播；遊戲開啟數的 LRU 上限
+- [ ] 指令過濾（預設去掉 look / inventory / examine，過濾後為空時退回完整清單）
+- [ ] 狀態文字：目標（去掉 TextWorld 開場白）、最近 k 個動作、物品欄、位置描述、上一步結果、剩餘步數
+- [ ] reward：成功 = 保底 + γ^步數；失敗 / 逾時 = 0（可選部分得分）
+
+### 1a.2 遊戲池與 teacher
+- [ ] 關卡定義 L1 / L2 / L2-goal / L3-goal；`mcts-laya tw-games` 平行產生，manifest 記錄 train / eval
+- [ ] `TextWorldTeacher`：`policy_commands` 的第一步為最佳動作，剩餘長度換算價值
+- [ ] 微型模型的 tokenizer 語料支援帶參數的環境
+
+### 1a.3 測試
+- [ ] 重播的確定性、狀態不可變、過濾、reward、teacher 解題、端到端迴圈
+
+### 1a.4 實驗（真 Laya，CPU 縮小版）
+- [ ] L1（完整指示）
+- [ ] L2（完整指示）
+- [ ] L2-goal（只給目標）
+- [ ] L3-goal（只給目標）
+- [ ] 報告 `docs/phase1a_report.md`
+
+### 1a.5 之後
+- [ ] cooking 關卡（橋接）：需要保留 `examine cookbook`，動作數較多
+- [ ] 動作數 > 20：shortlist / 階層式 choice（ALFWorld 也需要）
+- [ ] 部分可觀測的記憶：已探索房間與看過的物件摘要
+
+## Phase 1b（ALFWorld）預備
 - [ ] 多 episode 並行、跨 episode 合併葉節點批次（GPU 吞吐量）
-- [ ] 搜尋樹重用（下一步沿用子樹）
-- [ ] MuZero Reanalyse（用新網路重算舊軌跡的目標，減少昂貴的 self-play）
-- [ ] 有狀態模擬器 adapter（save/restore 或動作重播）
-- [ ] 選項數 > 20 的處理：shortlist / 階層式 choice / progressive widening
-- [ ] 長狀態的歷史摘要（context 512–1024）
+- [ ] 搜尋樹重用；MuZero Reanalyse
+- [ ] ALFWorld 安裝與資料下載、PDDL expert teacher
 
 ## 已知觀察
 - 預訓練過的 Laya 學得遠比隨機初始化的模型快（代數 150 題 vs 1000 題；Countdown 0.83 vs 0.37）。

@@ -6,3 +6,4 @@ models/
 runs/
 *.egg-info/
 *.log
+data/

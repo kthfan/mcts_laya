@@ -33,18 +33,34 @@
 
 ---
 
-## Phase 1：文字代理主線任務　⬜（6–8 週，下一個目標）
+## Phase 1：文字代理任務　🟡
 
-**目標**：在真正的文字環境上，證明「小型 System 1 模型 + 搜尋」能在成本與延遲上勝過 LLM agent。
+**目標**：在真正的文字環境上，證明「小型 System 1 模型 + 搜尋」能學會需要探索與記憶的多步任務，並在成本與延遲上和 LLM agent 比較。分成兩段：先在 TextWorld 上用可控難度的課程建立能力（1a），再推進到標準 benchmark ALFWorld（1b）。兩者使用同一個引擎，adapter 可以共用。
 
-- 環境擇一：**ALFWorld**（有 expert 軌跡）或 **WebShop**（已有 Laya 瀏覽器微調的前例）；TextWorld / Jericho 作為備選
-- 有狀態模擬器的 adapter（save/restore 或動作重播）、歷史摘要（context 512–1024）
-- 動作數 > 20 時的 shortlist / 階層式 choice / progressive widening
-- 多 episode 並行，跨 episode 合併葉節點批次（GPU 吞吐量）；搜尋樹重用；ONNX 推論
-- MuZero Reanalyse、凍結 encoder / LoRA 等降低迭代成本的手段
-- 對照組：ReAct / LATS（LLM 當 policy / value），比較成功率、每任務成本、延遲
+### Phase 1a：TextWorld（主線）　🟡
 
-**出口條件**：在選定環境上，Laya+MCTS 達到可報告的成功率，並畫出相對 LLM 基準的成本–成功率 Pareto 前緣。
+| 項目 | 狀態 |
+|---|---|
+| `Environment` 介面支援資料切分（`split`：train / eval），評估一律用保留的遊戲 | ⬜ |
+| TextWorld adapter：函數式狀態（遊戲 + 動作歷史）、reset + 前綴重播（不用 52 ms 的 `copy()`）、指令過濾 | ⬜ |
+| 狀態文字表示：目標、最近動作、物品欄、所在位置、上一步結果、剩餘步數 | ⬜ |
+| 關卡與遊戲池：`mcts-laya tw-games` 平行產生 train / eval 遊戲（不同 seed） | ⬜ |
+| teacher：使用 TextWorld 的 `policy_commands`（每個狀態的最佳剩餘指令） | ⬜ |
+| 實驗：L1 → L2 → L2-goal → L3-goal（真 Laya，CPU 縮小版） | ⬜ |
+| cooking 關卡（FTWP 題型）作為通往 ALFWorld 的橋接 | ⬜ |
+
+關卡（房間 / 物件 / 任務步數，目標寫法）：L1 = 3/6/3 完整指示；L2 = 5/10/5 完整指示；L2-goal = 5/10/5 只給最終目標；L3-goal = 8/15/8 只給最終目標。
+
+**出口條件**：在 L2-goal 與 L3-goal 上，Laya+MCTS 勝過 Laya greedy 與同預算的均勻先驗 MCTS，且 self-play 讓成功率上升。
+
+### Phase 1b：ALFWorld（進階目標）　⬜
+
+- 沿用 1a 的 adapter，加上動作數 > 20 時的 shortlist / 「動詞 → 目標」兩層 choice
+- 用 ALFWorld 的 PDDL expert 冷啟動
+- 和 ReAct / Reflexion（LLM 當 policy）比較成功率、每任務成本、延遲，畫出 Pareto 前緣
+- 效能：多 episode 並行、跨 episode 合併葉節點批次、搜尋樹重用、MuZero Reanalyse、凍結 encoder / LoRA
+
+**出口條件**：在 ALFWorld 未見過的評估集上達到可報告的成功率，並畫出相對 LLM 基準的成本–成功率 Pareto 前緣。
 
 ## Phase 2：雙人對抗 / 領域應用　⬜（8–12 週）
 
