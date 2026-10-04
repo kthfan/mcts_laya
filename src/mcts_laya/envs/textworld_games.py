@@ -18,22 +18,32 @@ import sys
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 EVAL_SEED_OFFSET = 1_000_000
 
 
 @dataclass(frozen=True)
 class LevelSpec:
-    """Options of `tw-make custom`, plus the episode step limit used for this level."""
+    """Options of `tw-make` (custom quests or FTWP cooking games), plus the episode step limit."""
 
-    world_size: int
-    nb_objects: int
-    quest_length: int
+    kind: str = "custom"  # "custom" | "cooking"
+    # custom quests
+    world_size: int = 3
+    nb_objects: int = 6
+    quest_length: int = 3
     only_last_action: bool = False  # objective names only the final step: explore and remember
+    # cooking games (First TextWorld Problems)
+    recipe: int = 1  # ingredients in the recipe
+    take: int = 1  # ingredients to find
+    go: int = 1  # locations: 1, 6, 9 or 12
+    cooking_skills: Tuple[str, ...] = ("open",)  # subset of open, cook, cut, drop
     max_steps: int = 20
 
     def tw_make_args(self) -> List[str]:
+        if self.kind == "cooking":
+            args = ["tw-cooking", "--recipe", str(self.recipe), "--take", str(self.take), "--go", str(self.go)]
+            return args + [f"--{s}" for s in self.cooking_skills]
         args = ["custom", "--world-size", str(self.world_size), "--nb-objects", str(self.nb_objects),
                 "--quest-length", str(self.quest_length)]
         if self.only_last_action:
@@ -46,6 +56,9 @@ LEVELS: Dict[str, LevelSpec] = {
     "L2": LevelSpec(world_size=5, nb_objects=10, quest_length=5, max_steps=15),
     "L2-goal": LevelSpec(world_size=5, nb_objects=10, quest_length=5, only_last_action=True, max_steps=20),
     "L3-goal": LevelSpec(world_size=8, nb_objects=15, quest_length=8, only_last_action=True, max_steps=30),
+    # cooking bridge levels: read the cookbook, gather and prepare ingredients (household common sense)
+    "C1": LevelSpec(kind="cooking", recipe=1, take=1, go=1, cooking_skills=("open",), max_steps=15),
+    "C2": LevelSpec(kind="cooking", recipe=2, take=2, go=6, cooking_skills=("open", "cut"), max_steps=30),
 }
 
 

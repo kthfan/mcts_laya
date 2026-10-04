@@ -42,6 +42,7 @@ class TWState:
     history: Tuple[str, ...]
     obs: Observation = field(compare=False, hash=False)
     visited: Tuple[str, ...] = field(default=(), compare=False, hash=False)  # rooms, first-visit order
+    notes: Tuple[Tuple[str, str], ...] = field(default=(), compare=False, hash=False)  # (command, what it showed)
 
     @property
     def steps(self) -> int:
@@ -130,6 +131,8 @@ class TextWorldEnv(SingleAgentEnvironment):
         success_floor: float = 0.5,
         partial_weight: float = 0.0,
         drop_commands: Sequence[str] = ("look", "inventory", "examine"),
+        keep_commands: Sequence[str] = (),
+        remember_commands: Sequence[str] = ("examine cookbook",),
         history_len: int = 6,
         show_visited: bool = True,
         max_open_games: int = 64,
@@ -144,6 +147,8 @@ class TextWorldEnv(SingleAgentEnvironment):
         self.success_floor = success_floor
         self.partial_weight = partial_weight
         self.drop_commands = tuple(drop_commands)
+        self.keep_commands = tuple(keep_commands)  # exact commands exempt from drop_commands
+        self.remember_commands = tuple(remember_commands)  # their output stays in the state as notes
         self.history_len = history_len
         self.show_visited = show_visited
         self.max_open_games = max_open_games
@@ -162,12 +167,15 @@ class TextWorldEnv(SingleAgentEnvironment):
             self._runners.move_to_end(game)
         return r
 
-    def _state(self, game: str, history: Tuple[str, ...], visited: Tuple[str, ...] = ()) -> TWState:
+    def _state(self, game: str, history: Tuple[str, ...], visited: Tuple[str, ...] = (),
+               notes: Tuple[Tuple[str, str], ...] = ()) -> TWState:
         obs = self._runner(game).observe(history)
         room = room_name(obs.description)
         if room and room not in visited:
             visited = visited + (room,)
-        return TWState(game, history, obs, visited)
+        if history and history[-1] in self.remember_commands and history[-1] not in dict(notes):
+            notes = notes + ((history[-1], clean_feedback(obs.feedback)),)
+        return TWState(game, history, obs, visited, notes)
 
     def initial_state(self, game: str) -> TWState:
         return self._state(game, ())
@@ -189,11 +197,11 @@ class TextWorldEnv(SingleAgentEnvironment):
 
     # --- dynamics ---------------------------------------------------------------------------
     def legal_actions(self, state: TWState) -> List[str]:
-        cmds = [c for c in state.obs.admissible if not c.startswith(self.drop_commands)]
+        cmds = [c for c in state.obs.admissible if c in self.keep_commands or not c.startswith(self.drop_commands)]
         return cmds or list(state.obs.admissible)
 
     def step(self, state: TWState, action: str) -> TWState:
-        return self._state(state.game, state.history + (action,), state.visited)
+        return self._state(state.game, state.history + (action,), state.visited, state.notes)
 
     def is_terminal(self, state: TWState) -> bool:
         o = state.obs
@@ -221,6 +229,8 @@ class TextWorldEnv(SingleAgentEnvironment):
         parts.append("Recent actions: " + ("; ".join(recent) if recent else "none") + ".")
         if self.show_visited and len(state.visited) > 1:
             parts.append("Rooms visited: " + ", ".join(state.visited) + ".")
+        for _, note in state.notes:
+            parts.append(f"Notes: {note}")
         parts.append(" ".join(o.inventory.split()))
         room = clean_room(o.description)
         parts.append(f"Location: {room}")

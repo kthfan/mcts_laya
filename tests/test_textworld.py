@@ -126,3 +126,24 @@ def test_pipeline_runs_on_textworld(tw_root, tiny_checkpoint, tmp_path):
     AlphaZeroLoop(cfg).run()
     kinds = {json.loads(line)["kind"] for line in open(tmp_path / "metrics.jsonl")}
     assert {"eval", "train", "selfplay"} <= kinds
+
+
+@pytest.fixture(scope="session")
+def cooking_root(tmp_path_factory):
+    root = tmp_path_factory.mktemp("twc")
+    generate_pool(str(root), "C1", n_train=1, n_eval=1, workers=2)
+    return str(root)
+
+
+def test_cooking_reads_cookbook_first_and_keeps_notes(cooking_root):
+    env = TextWorldEnv(game_dir=cooking_root, level="C1", keep_commands=["examine cookbook"])
+    s = env.sample_problem(random.Random(0))
+    assert "examine cookbook" in env.legal_actions(s)
+    teacher = TextWorldTeacher(env)
+    actions, pi, _ = teacher.label(s)
+    assert actions[int(np.argmax(pi))] == "examine cookbook"  # the oracle plan skips it
+    t = env.step(s, "examine cookbook")
+    assert t.notes and "Notes:" in env.state_text(t)
+    assert env.step(t, env.legal_actions(t)[0]).notes == t.notes  # notes persist
+    solved, _ = teacher.solve(s)
+    assert solved

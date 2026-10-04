@@ -1,0 +1,56 @@
+# Phase 1a / TextWorld C2: cooking, 2 ingredients, 6 rooms, cutting
+# Full-scale run (GPU recommended). Generate the pool first:
+#   mcts-laya tw-games --level C2 --train 150 --eval 40 --out data/textworld
+name: phase1a-textworld-c2-laya
+output_dir: runs/phase1a/c2-laya
+seed: 0
+iterations: 8
+save_checkpoints: last
+save_half: true
+
+env:
+  name: textworld
+  params: {game_dir: data/textworld, level: C2, gamma: 0.9, success_floor: 0.5, partial_weight: 0.3,
+           drop_commands: [look, inventory, examine], keep_commands: [examine cookbook],
+           remember_commands: [examine cookbook], history_len: 6}
+
+model:
+  checkpoint: models/laya/multilingual
+  device: null
+  max_len: 1024         # kitchens and the cookbook make long states
+  head_max_len: 512     # cooking positions have up to ~35-45 commands
+
+evaluator: {max_rows: 64, prior_temperature: 1.0}
+
+search:
+  name: puct
+  params: {num_simulations: 16, batch_size: 4, c_puct: 1.5, dirichlet_alpha: 0.3, dirichlet_fraction: 0.25}
+
+teacher: {enabled: true, problems: 150, explore: 0.3, epochs: 2}
+
+selfplay:
+  episodes_per_iteration: 64
+  config: {max_moves: 50, add_noise: true, action_selection: search, value_target: outcome,
+           policy_target_temperature: 0.5, failed_policy_weight: 0.0}
+
+train:
+  replay_capacity: 20000
+  samples_per_iteration: null
+  teacher_mix: 0.5
+  config: {epochs: 1, batch_size: 4, lr_encoder: 3.0e-5, lr_head: 2.0e-4, rl_weight: 0.0,
+           freeze_encoder: false, freeze_embeddings: true, gradient_checkpointing: true,
+           augment_option_order: true}
+
+eval:
+  problems: 40
+  seed: 12345
+  max_moves: 50
+  searches:
+    - {label: greedy, name: greedy}
+    - {label: puct16, name: puct, params: {num_simulations: 16, batch_size: 4}}
+  baselines:
+    - {label: uniform-puct16, name: puct, evaluator: uniform, params: {num_simulations: 16, batch_size: 4}}
+    - {label: rollout-puct16, name: puct, evaluator: rollout, params: {num_simulations: 16}}
+
+gate: {enabled: false, metric: puct16.reward, tolerance: 0.02}
+milestone: {search_label: puct16, greedy_label: greedy, baseline_label: uniform-puct16, metric: reward}
