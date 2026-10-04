@@ -65,12 +65,12 @@
 
 ## 視覺化介面（並行工作）
 評估：Countdown、代數沒有現成引擎，用 HTML 前端；TextWorld 以引擎的 `textworld.render`（世界狀態 → 地圖 JSON）為基礎；ALFWorld 文字版沿用 TextWorld 做法，3D（AI2-THOR）需要 GPU，列為選配。
-- [ ] 搜尋紀錄匯出：每步候選（先驗 / 拜訪 / Q / 策略）、價值、有上限的搜尋樹；環境專屬畫面資料 `render_data`
-- [ ] teacher 也當成一種「搜尋」，供同題比較
-- [ ] 前端（單一 HTML，純 JS + SVG，深淺色）：對局回放、搜尋樹瀏覽、同題比較、學習曲線
-- [ ] 靜態報告：`mcts-laya viz <run_dir>`
-- [ ] 即時模式：`mcts-laya serve`（出題、逐步搜尋、自己選步）
-- [ ] TextWorld 地圖面板（`textworld.render.load_state`）
+- [x] 搜尋紀錄匯出：每步候選（先驗 / 拜訪 / Q / 策略）、價值、有上限的搜尋樹；環境專屬畫面資料 `render_data`
+- [x] teacher 也當成一種「搜尋」，供同題比較
+- [x] 前端（單一 HTML，純 JS + SVG，深淺色）：對局回放、搜尋樹瀏覽、同題比較、學習曲線
+- [x] 靜態報告：`mcts-laya viz <run_dir>`
+- [x] 即時模式：`mcts-laya serve`（出題、逐步搜尋、自己選步）
+- [x] TextWorld 地圖面板（`textworld.render.load_state`）
 - [ ] ALFWorld：文字版沿用；3D 畫面待 GPU
 
 ## Phase 1b（ALFWorld）預備

@@ -36,6 +36,15 @@ scripts/setup_env.sh --download    # 再下載 laya-multilingual 權重到 model
 
 每個實驗會在 `output_dir` 寫出：`config.yaml`（完整設定）、`metrics.jsonl`（每個階段一筆紀錄）、`summary.md`（學習曲線、基準比較、Phase 0 里程碑檢查）、`teacher_samples.jsonl`，以及 `checkpoints/`（Laya 相容格式，可以直接 `laya.load`）。
 
+## 視覺化
+
+```bash
+.venv/bin/mcts-laya viz --run runs/phase0/countdown-laya-cpu-smoke   # 靜態 HTML 報告（對局回放、搜尋樹、同題比較、學習曲線）
+.venv/bin/mcts-laya serve --run runs/phase1a/l1-laya-cpu             # 即時模式：http://127.0.0.1:8765
+```
+
+說明與各環境的評估見 [`docs/visualization.md`](docs/visualization.md)，已產生的報告在 [`docs/viz/`](docs/viz/)。
+
 ## 架構
 
 ```
@@ -54,6 +63,7 @@ src/mcts_laya/
   training/      Sample（純文字 + 軟目標，JSONL）、ReplayBuffer、LayaTrainer
                  （soft CE + 選用 RLCD、選項順序擴增、溫度校準、存成 Laya checkpoint）
   models/        download.py（HF 下載）、tiny.py（微型相容模型）
+  viz/           搜尋紀錄匯出、靜態報告（viz）、即時伺服器（serve）、單檔前端（static/）
   laya_io.py     局面 <-> Laya 問題（policy = choice、value = noul）的唯一轉換點
   pipeline.py    AlphaZeroLoop：warm start -> [self-play -> 訓練 -> 校準 -> 評估 -> gate]*
   config.py      YAML -> dataclass，支援 --set a.b=c 覆寫，未知的 key 直接報錯

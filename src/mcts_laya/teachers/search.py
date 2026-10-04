@@ -14,9 +14,10 @@ from ..search.tree import SearchResult, Searcher
 class TeacherSearch(Searcher):
     """Plays the environment's exact teacher (an upper-bound reference, not a learner)."""
 
-    def __init__(self, env, evaluator=None, **teacher_params):
+    def __init__(self, env, evaluator=None, **_search_params):
+        # search budgets (num_simulations, ...) do not apply to an exact teacher
         super().__init__(env, evaluator)
-        self.teacher = TEACHERS.build(env.name, env, **teacher_params)
+        self.teacher = TEACHERS.build(env.name, env)
 
     def search(self, state: Any, rng: np.random.Generator, add_noise: bool = False) -> SearchResult:
         actions, pi, value = self.teacher.label(state)
