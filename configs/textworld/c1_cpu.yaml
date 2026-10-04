@@ -31,12 +31,12 @@ teacher: {enabled: true, problems: 60, explore: 0.3, epochs: 2}
 selfplay:
   episodes_per_iteration: 12
   config: {max_moves: 50, add_noise: true, action_selection: search, value_target: outcome,
-           policy_target_temperature: 0.5, failed_policy_weight: 0.0}
+           policy_target_temperature: 0.25, failed_policy_weight: 0.0}
 
 train:
   replay_capacity: 20000
   samples_per_iteration: null
-  teacher_mix: 0.5
+  teacher_mix: 1.0          # keep every teacher sample: self-play targets alone diluted the warm start
   config: {epochs: 1, batch_size: 4, lr_encoder: 3.0e-5, lr_head: 2.0e-4, rl_weight: 0.0,
            freeze_encoder: false, freeze_embeddings: true, gradient_checkpointing: true,
            augment_option_order: true}
@@ -52,5 +52,7 @@ eval:
     - {label: uniform-puct16, name: puct, evaluator: uniform, params: {num_simulations: 16, batch_size: 4}}
     - {label: rollout-puct16, name: puct, evaluator: rollout, params: {num_simulations: 16}}
 
-gate: {enabled: false, metric: puct16.reward, tolerance: 0.02}
+# Gate (AlphaGo Zero style): keep an iteration's weights only if puct16 reward does not drop by more
+# than the tolerance; otherwise revert. Without it, 16-simulation self-play degraded L2-goal (0.95 -> 0.65).
+gate: {enabled: true, metric: puct16.reward, tolerance: 0.02}
 milestone: {search_label: puct16, greedy_label: greedy, baseline_label: uniform-puct16, metric: reward}

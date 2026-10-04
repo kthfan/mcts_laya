@@ -55,7 +55,9 @@
 - [x] L1（完整指示）：warm start 後 PUCT16 成功率 0.97，self-play 後 1.00（最優 3 步）；均勻先驗 PUCT16 0.30
 - [x] L2（完整指示）：warm start 後 1.00、self-play 3 輪後 0.90（30 題評估，差 3 題，接近雜訊）；均勻先驗 0.03
   - 注意：L1、L2 使用修正前的目標清理（約 3% 的遊戲目標被截掉一部分），L2-goal 起已修正
-- [ ] L2-goal（只給目標）
+- [ ] L2-goal（只給目標）：重跑中，加上 gate、policy 目標溫度 0.25、保留全部 teacher 資料
+  - 第一次（沒有 gate，被工作程序重啟中斷）：warm start 後 greedy 0.85 / PUCT16 0.95，self-play 1 輪後掉到 0.60 / 0.65
+  - 若加 gate 仍無改善，與使用者討論下一步（例如提高 self-play 模擬次數）
 - [ ] L3-goal（只給目標）
 - [ ] 報告 `docs/phase1a_report.md`
 
