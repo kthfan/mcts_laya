@@ -37,31 +37,33 @@
 ## 目前目標：Phase 1a（TextWorld）
 
 ### 1a.1 介面與 adapter
-- [ ] `Environment.sample_problem(rng, split)`、`sample_problems(rng, n, split)`；pipeline 的評估改用 `split="eval"`
-- [ ] `TextWorldEnv`：狀態 = (遊戲, 動作歷史) + 觀測快照；`GameRunner` 用 reset + 前綴重播；遊戲開啟數的 LRU 上限
-- [ ] 指令過濾（預設去掉 look / inventory / examine，過濾後為空時退回完整清單）
-- [ ] 狀態文字：目標（去掉 TextWorld 開場白）、最近 k 個動作、物品欄、位置描述、上一步結果、剩餘步數
-- [ ] reward：成功 = 保底 + γ^步數；失敗 / 逾時 = 0（可選部分得分）
+- [x] `Environment.sample_problem(rng, split)`、`sample_problems(rng, n, split)`；pipeline 的評估改用 `split="eval"`
+- [x] `TextWorldEnv`：狀態 = (遊戲, 動作歷史) + 觀測快照；`GameRunner` 用 reset + 前綴重播；遊戲開啟數的 LRU 上限
+- [x] 指令過濾（預設去掉 look / inventory / examine，過濾後為空時退回完整清單）
+- [x] 狀態文字：目標（去掉 TextWorld 開場白）、最近 k 個動作、物品欄、位置描述、上一步結果、剩餘步數
+- [x] reward：成功 = 保底 + γ^步數；失敗 / 逾時 = 0（可選部分得分）
 
 ### 1a.2 遊戲池與 teacher
-- [ ] 關卡定義 L1 / L2 / L2-goal / L3-goal；`mcts-laya tw-games` 平行產生，manifest 記錄 train / eval
-- [ ] `TextWorldTeacher`：`policy_commands` 的第一步為最佳動作，剩餘長度換算價值
-- [ ] 微型模型的 tokenizer 語料支援帶參數的環境
+- [x] 關卡定義 L1 / L2 / L2-goal / L3-goal；`mcts-laya tw-games` 平行產生，manifest 記錄 train / eval
+- [x] `TextWorldTeacher`：`policy_commands` 的第一步為最佳動作，剩餘長度換算價值
+- [x] 微型模型的 tokenizer 語料支援帶參數的環境
 
 ### 1a.3 測試
-- [ ] 重播的確定性、狀態不可變、過濾、reward、teacher 解題、端到端迴圈
+- [x] 重播的確定性、狀態不可變、過濾、reward、teacher 解題、端到端迴圈
 
 ### 1a.4 實驗（真 Laya，CPU 縮小版）
-- [ ] L1（完整指示）
-- [ ] L2（完整指示）
+- [x] L1（完整指示）：warm start 後 PUCT16 成功率 0.97，self-play 後 1.00（最優 3 步）；均勻先驗 PUCT16 0.30
+- [x] L2（完整指示）：warm start 後 1.00、self-play 3 輪後 0.90（30 題評估，差 3 題，接近雜訊）；均勻先驗 0.03
+  - 注意：L1、L2 使用修正前的目標清理（約 3% 的遊戲目標被截掉一部分），L2-goal 起已修正
 - [ ] L2-goal（只給目標）
 - [ ] L3-goal（只給目標）
 - [ ] 報告 `docs/phase1a_report.md`
 
 ### 1a.5 之後
-- [ ] cooking 關卡（橋接）：需要保留 `examine cookbook`，動作數較多
+- [x] cooking 關卡（橋接）C1 / C2：保留 `examine cookbook`、食譜存成 Notes、teacher 先讀食譜；head 預算 512
+- [ ] C1 實驗（排在 L3-goal 之後）
 - [ ] 動作數 > 20：shortlist / 階層式 choice（ALFWorld 也需要）
-- [ ] 部分可觀測的記憶：已探索房間與看過的物件摘要
+- [x] 部分可觀測的記憶：已造訪房間清單（看過的物件摘要尚未做）
 
 ## 視覺化介面（並行工作）
 評估：Countdown、代數沒有現成引擎，用 HTML 前端；TextWorld 以引擎的 `textworld.render`（世界狀態 → 地圖 JSON）為基礎；ALFWorld 文字版沿用 TextWorld 做法，3D（AI2-THOR）需要 GPU，列為選配。
