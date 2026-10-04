@@ -41,6 +41,7 @@ class TWState:
     game: str
     history: Tuple[str, ...]
     obs: Observation = field(compare=False, hash=False)
+    visited: Tuple[str, ...] = field(default=(), compare=False, hash=False)  # rooms, first-visit order
 
     @property
     def steps(self) -> int:
@@ -95,6 +96,11 @@ def clean_objective(text: str) -> str:
     return " ".join(s for s in sentences if s and not _BOILERPLATE.search(s))
 
 
+def room_name(description: str) -> str:
+    m = re.search(r"-=\s*(.*?)\s*=-", description)
+    return m.group(1) if m else ""
+
+
 def clean_room(text: str) -> str:
     text = re.sub(r"-=\s*(.*?)\s*=-", r"\1.", text)
     return " ".join(text.split())
@@ -125,6 +131,7 @@ class TextWorldEnv(SingleAgentEnvironment):
         partial_weight: float = 0.0,
         drop_commands: Sequence[str] = ("look", "inventory", "examine"),
         history_len: int = 6,
+        show_visited: bool = True,
         max_open_games: int = 64,
     ):
         self.level = level
@@ -138,6 +145,7 @@ class TextWorldEnv(SingleAgentEnvironment):
         self.partial_weight = partial_weight
         self.drop_commands = tuple(drop_commands)
         self.history_len = history_len
+        self.show_visited = show_visited
         self.max_open_games = max_open_games
         self._runners: "OrderedDict[str, GameRunner]" = OrderedDict()
 
@@ -154,8 +162,12 @@ class TextWorldEnv(SingleAgentEnvironment):
             self._runners.move_to_end(game)
         return r
 
-    def _state(self, game: str, history: Tuple[str, ...]) -> TWState:
-        return TWState(game, history, self._runner(game).observe(history))
+    def _state(self, game: str, history: Tuple[str, ...], visited: Tuple[str, ...] = ()) -> TWState:
+        obs = self._runner(game).observe(history)
+        room = room_name(obs.description)
+        if room and room not in visited:
+            visited = visited + (room,)
+        return TWState(game, history, obs, visited)
 
     def initial_state(self, game: str) -> TWState:
         return self._state(game, ())
@@ -181,7 +193,7 @@ class TextWorldEnv(SingleAgentEnvironment):
         return cmds or list(state.obs.admissible)
 
     def step(self, state: TWState, action: str) -> TWState:
-        return self._state(state.game, state.history + (action,))
+        return self._state(state.game, state.history + (action,), state.visited)
 
     def is_terminal(self, state: TWState) -> bool:
         o = state.obs
@@ -207,6 +219,8 @@ class TextWorldEnv(SingleAgentEnvironment):
         recent = state.history[-self.history_len:] if self.history_len else ()
         parts = [f"Goal: {clean_objective(o.objective)}"]
         parts.append("Recent actions: " + ("; ".join(recent) if recent else "none") + ".")
+        if self.show_visited and len(state.visited) > 1:
+            parts.append("Rooms visited: " + ", ".join(state.visited) + ".")
         parts.append(" ".join(o.inventory.split()))
         room = clean_room(o.description)
         parts.append(f"Location: {room}")

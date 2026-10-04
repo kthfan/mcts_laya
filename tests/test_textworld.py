@@ -49,6 +49,16 @@ def test_replay_is_deterministic_and_states_are_immutable(env):
     assert env.state_text(s1) == env.state_text(again)
 
 
+def test_visited_rooms_are_tracked(env):
+    s = env.sample_problem(random.Random(9))
+    start = s.visited
+    assert len(start) == 1
+    for cmd in [c for c in env.legal_actions(s) if c.startswith("go ")][:1]:
+        t = env.step(s, cmd)
+        assert t.visited[0] == start[0] and len(t.visited) == 2
+        assert "Rooms visited:" in env.state_text(t)
+
+
 def test_filtering_and_sampling(env):
     s = env.sample_problem(random.Random(1), "eval")
     assert s.game.startswith("eval/")
