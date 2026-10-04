@@ -1,0 +1,882 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Laya × MCTS 搜尋視覺化</title>
+<style>/* Tokens follow the dataviz reference palette; dark values are their own validated steps. */
+:root {
+  color-scheme: light;
+  --page: #f9f9f7;
+  --surface-1: #fcfcfb;
+  --surface-2: #f3f2ee;
+  --text-primary: #0b0b0b;
+  --text-secondary: #52514e;
+  --text-muted: #898781;
+  --grid: #e1e0d9;
+  --axis: #c3c2b7;
+  --border: rgba(11, 11, 11, 0.10);
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #1baf7a;
+  --series-4: #eda100;
+  --series-5: #e87ba4;
+  --series-6: #008300;
+  --series-7: #4a3aa7;
+  --series-8: #e34948;
+  --div-pos: #2a78d6;
+  --div-neg: #e34948;
+  --div-mid: #f0efec;
+  --good: #0ca30c;
+  --good-text: #006300;
+  --critical: #d03b3b;
+  --accent-wash: rgba(42, 120, 214, 0.10);
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface-1: #1a1a19;
+    --surface-2: #232321;
+    --text-primary: #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted: #898781;
+    --grid: #2c2c2a;
+    --axis: #383835;
+    --border: rgba(255, 255, 255, 0.10);
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --series-3: #199e70;
+    --series-4: #c98500;
+    --series-5: #d55181;
+    --series-6: #008300;
+    --series-7: #9085e9;
+    --series-8: #e66767;
+    --div-pos: #3987e5;
+    --div-neg: #e66767;
+    --div-mid: #383835;
+    --good: #0ca30c;
+    --good-text: #0ca30c;
+    --critical: #d03b3b;
+    --accent-wash: rgba(57, 135, 229, 0.16);
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d;
+  --surface-1: #1a1a19;
+  --surface-2: #232321;
+  --text-primary: #ffffff;
+  --text-secondary: #c3c2b7;
+  --text-muted: #898781;
+  --grid: #2c2c2a;
+  --axis: #383835;
+  --border: rgba(255, 255, 255, 0.10);
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-3: #199e70;
+  --series-4: #c98500;
+  --series-5: #d55181;
+  --series-6: #008300;
+  --series-7: #9085e9;
+  --series-8: #e66767;
+  --div-pos: #3987e5;
+  --div-neg: #e66767;
+  --div-mid: #383835;
+  --good: #0ca30c;
+  --good-text: #0ca30c;
+  --critical: #d03b3b;
+  --accent-wash: rgba(57, 135, 229, 0.16);
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--page); color: var(--text-primary); }
+body { font: 14px/1.5 system-ui, -apple-system, "Segoe UI", "Noto Sans TC", sans-serif; }
+button, select, input { font: inherit; color: inherit; }
+.viz-root { max-width: 1280px; margin: 0 auto; padding: 16px; }
+
+header.top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 16px; margin-bottom: 12px; }
+header.top h1 { font-size: 20px; font-weight: 600; margin: 0; }
+header.top .sub { color: var(--text-secondary); }
+header.top .spacer { flex: 1; }
+
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--grid); margin-bottom: 16px; overflow-x: auto; }
+.tabs button { background: none; border: 0; padding: 8px 12px; color: var(--text-secondary); cursor: pointer;
+  border-bottom: 2px solid transparent; white-space: nowrap; }
+.tabs button[aria-selected="true"] { color: var(--text-primary); border-bottom-color: var(--text-primary); font-weight: 600; }
+
+.controls { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin-bottom: 12px; }
+.controls label { color: var(--text-secondary); display: inline-flex; gap: 6px; align-items: center; }
+select, input[type="number"] { background: var(--surface-1); border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; }
+input[type="range"] { width: 180px; }
+.btn { background: var(--surface-1); border: 1px solid var(--border); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+.btn:hover { background: var(--surface-2); }
+.btn.primary { border-color: var(--text-secondary); font-weight: 600; }
+.btn:disabled { opacity: 0.5; cursor: default; }
+
+.grid2 { display: grid; grid-template-columns: minmax(280px, 5fr) minmax(320px, 7fr); gap: 16px; }
+@media (max-width: 860px) { .grid2 { grid-template-columns: 1fr; } }
+.card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
+.card h2 { font-size: 15px; font-weight: 600; margin: 0 0 4px; }
+.card .hint { color: var(--text-muted); font-size: 12px; margin: 0 0 10px; }
+.muted { color: var(--text-muted); }
+.secondary { color: var(--text-secondary); }
+.tnum { font-variant-numeric: tabular-nums; }
+
+/* environment panels */
+.cd-target { font-size: 13px; color: var(--text-secondary); }
+.cd-target b { display: block; font-size: 40px; line-height: 1.1; color: var(--text-primary); font-weight: 600; }
+.cd-tiles { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+.cd-tile { min-width: 52px; padding: 10px 12px; text-align: center; border-radius: 8px; background: var(--surface-2);
+  border: 1px solid var(--border); font-size: 20px; font-weight: 600; }
+.cd-tile.hit { outline: 2px solid var(--good); outline-offset: 1px; }
+.history { margin: 8px 0 0; padding-left: 18px; color: var(--text-secondary); }
+.eq { font: 600 24px/1.4 ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; overflow-wrap: anywhere; margin: 8px 0; }
+.eq .rel { color: var(--text-muted); padding: 0 6px; }
+.statetext { white-space: pre-wrap; background: var(--surface-2); border-radius: 8px; padding: 10px 12px; margin: 8px 0 0;
+  font: 13px/1.5 ui-monospace, Menlo, Consolas, monospace; max-height: 340px; overflow: auto; }
+.badge { white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border-radius: 999px; font-size: 12px;
+  border: 1px solid var(--border); background: var(--surface-2); }
+.badge .dot { width: 8px; height: 8px; border-radius: 50%; }
+.ok .dot { background: var(--good); }
+.fail .dot { background: var(--critical); }
+
+/* candidate table */
+table.cands, table.data { width: 100%; border-collapse: collapse; }
+table.cands th, table.data th { text-align: left; font-weight: 600; color: var(--text-secondary); font-size: 12px;
+  border-bottom: 1px solid var(--grid); padding: 4px 6px; }
+table.cands td, table.data td { border-bottom: 1px solid var(--grid); padding: 5px 6px; vertical-align: middle; }
+table.cands tr.chosen td { background: var(--accent-wash); }
+table.cands tr.live:hover td { background: var(--surface-2); cursor: pointer; }
+td.act { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; overflow-wrap: anywhere; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.bars { display: grid; gap: 2px; min-width: 120px; }
+.bar { height: 7px; border-radius: 0 4px 4px 0; min-width: 0; }
+.bar-track { width: 100%; }
+.qbar { position: relative; width: 64px; height: 10px; }
+.qbar .mid { position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: var(--axis); }
+.qbar .fill { position: absolute; top: 2px; height: 6px; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; color: var(--text-secondary); font-size: 12px; margin: 0 0 8px; }
+.legend .key { display: inline-flex; align-items: center; gap: 6px; }
+.legend .sw { width: 12px; height: 8px; border-radius: 2px; box-shadow: inset 0 0 0 1px var(--border); }
+.legend .ln { width: 14px; height: 2px; border-radius: 1px; }
+.stats { display: flex; flex-wrap: wrap; gap: 16px; margin: 4px 0 12px; }
+.stat .label { color: var(--text-secondary); font-size: 12px; }
+.stat .value { font-size: 20px; font-weight: 600; }
+
+/* tree */
+.tree-wrap { overflow: auto; max-height: 640px; border: 1px solid var(--grid); border-radius: 8px; background: var(--surface-1); }
+.tree-wrap svg text { fill: var(--text-secondary); font-size: 11px; }
+.tree-wrap .node { cursor: pointer; }
+.tree-wrap .node:focus { outline: none; }
+.tree-wrap .node:focus circle.hit, .tree-wrap .node:hover circle.hit { stroke: var(--text-primary); stroke-width: 1.5; }
+.details dt { color: var(--text-secondary); font-size: 12px; }
+.details dd { margin: 0 0 8px; }
+
+/* charts */
+.chart svg { display: block; width: 100%; height: auto; }
+.chart .gridline { stroke: var(--grid); stroke-width: 1; }
+.chart .axis { stroke: var(--axis); stroke-width: 1; }
+.chart text { fill: var(--text-muted); font-size: 11px; }
+.chart text.dlabel { fill: var(--text-secondary); font-size: 12px; }
+.charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(480px, 1fr)); gap: 16px; }
+@media (max-width: 560px) { .charts { grid-template-columns: 1fr; } }
+.tooltip { position: fixed; z-index: 10; pointer-events: none; background: var(--surface-1); color: var(--text-primary);
+  border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; box-shadow: 0 4px 16px rgba(0,0,0,.12);
+  font-size: 12px; max-width: 320px; }
+.tooltip .row { display: flex; align-items: center; gap: 8px; }
+.tooltip .row b { font-variant-numeric: tabular-nums; }
+.tooltip .key { width: 12px; height: 2px; border-radius: 1px; }
+.empty { color: var(--text-muted); padding: 24px; text-align: center; }
+.stack { display: grid; gap: 16px; }
+.path { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; color: var(--text-secondary); }
+.toggle { margin-left: auto; }
+.error { color: var(--critical); }
+</style>
+</head>
+<body>
+<div id="app" class="viz-root"></div>
+<div id="tooltip" class="tooltip" role="status" hidden></div>
+<script>
+window.VIZ_MODE = "static";
+window.VIZ_DATA = {"meta": {"name": "phase0-countdown-laya-cpu-smoke", "env": "countdown", "env_params": {"n_numbers": 4, "target_range": [10, 200], "min_solution_steps": 2, "action_detail": "outcome"}, "checkpoint": "runs/phase0/countdown-laya-cpu-smoke/checkpoints/final", "methods": [{"label": "greedy", "searcher": "greedy", "evaluator": "model", "simulations": 0, "uses_model": true}, {"label": "puct16", "searcher": "puct", "evaluator": "model", "simulations": 16, "uses_model": true}, {"label": "uniform-puct16", "searcher": "puct", "evaluator": "uniform", "simulations": 16, "uses_model": false}, {"label": "uniform-gumbel16", "searcher": "gumbel", "evaluator": "uniform", "simulations": 16, "uses_model": false}, {"label": "rollout-puct16", "searcher": "puct", "evaluator": "rollout", "simulations": 16, "uses_model": false}, {"label": "teacher", "searcher": "teacher", "evaluator": "none", "simulations": 0, "uses_model": false}], "shown_methods": ["greedy", "puct16", "uniform-puct16", "uniform-gumbel16", "rollout-puct16", "teacher"]}, "generated": "2026-10-04 10:45 UTC", "problems": [{"id": "p0", "render": {"kind": "countdown", "target": 135, "numbers": [1, 6, 8, 9], "history": [], "use_all": false}, "text": "Target: 135. Numbers: 1, 6, 8, 9."}, {"id": "p1", "render": {"kind": "countdown", "target": 70, "numbers": [1, 2, 4, 75], "history": [], "use_all": false}, "text": "Target: 70. Numbers: 1, 2, 4, 75."}, {"id": "p2", "render": {"kind": "countdown", "target": 23, "numbers": [3, 4, 6, 9], "history": [], "use_all": false}, "text": "Target: 23. Numbers: 3, 4, 6, 9."}, {"id": "p3", "render": {"kind": "countdown", "target": 65, "numbers": [9, 10, 25, 100], "history": [], "use_all": false}, "text": "Target: 65. Numbers: 9, 10, 25, 100."}], "traces": {"p0": {"greedy": {"steps": [{"render": {"kind": "countdown", "target": 135, "numbers": [1, 6, 8, 9], "history": [], "use_all": false}, "text": "Target: 135. Numbers: 1, 6, 8, 9.", "actions": [{"text": "6 + 1 = 7 (gap 126)", "prior": 0.0736, "policy": 0.0736, "visits": 0, "q": null}, {"text": "6 - 1 = 5 (gap 126)", "prior": 0.0749, "policy": 0.0749, "visits": 0, "q": null}, {"text": "8 + 1 = 9 (gap 126)", "prior": 0.0759, "policy": 0.0759, "visits": 0, "q": null}, {"text": "8 - 1 = 7 (gap 126)", "prior": 0.0715, "policy": 0.0715, "visits": 0, "q": null}, {"text": "9 + 1 = 10 (gap 125)", "prior": 0.0607, "policy": 0.0607, "visits": 0, "q": null}, {"text": "9 - 1 = 8 (gap 127)", "prior": 0.0847, "policy": 0.0847, "visits": 0, "q": null}, {"text": "8 + 6 = 14 (gap 121)", "prior": 0.0578, "policy": 0.0578, "visits": 0, "q": null}, {"text": "8 - 6 = 2 (gap 126)", "prior": 0.0646, "policy": 0.0646, "visits": 0, "q": null}, {"text": "8 * 6 = 48 (gap 87)", "prior": 0.06, "policy": 0.06, "visits": 0, "q": null}, {"text": "9 + 6 = 15 (gap 120)", "prior": 0.06, "policy": 0.06, "visits": 0, "q": null}, {"text": "9 - 6 = 3 (gap 127)", "prior": 0.0632, "policy": 0.0632, "visits": 0, "q": null}, {"text": "9 * 6 = 54 (gap 81)", "prior": 0.0568, "policy": 0.0568, "visits": 0, "q": null}, {"text": "9 + 8 = 17 (gap 118)", "prior": 0.0624, "policy": 0.0624, "visits": 0, "q": null}, {"text": "9 - 8 = 1 (gap 129)", "prior": 0.0705, "policy": 0.0705, "visits": 0, "q": null}, {"text": "9 * 8 = 72 (gap 63)", "prior": 0.0633, "policy": 0.0633, "visits": 0, "q": null}], "selected": 5, "chosen": 5, "nn_value": 0.6219, "root_value": 0.6219, "simulations": 0}, {"render": {"kind": "countdown", "target": 135, "numbers": [6, 8, 8], "history": ["9 - 1 = 8"], "use_all": false}, "text": "Target: 135. Numbers: 6, 8, 8.", "actions": [{"text": "8 + 6 = 14 (gap 121)", "prior": 0.1657, "policy": 0.1657, "visits": 0, "q": null}, {"text": "8 - 6 = 2 (gap 127)", "prior": 0.1683, "policy": 0.1683, "visits": 0, "q": null}, {"text": "8 * 6 = 48 (gap 87)", "prior": 0.1666, "policy": 0.1666, "visits": 0, "q": null}, {"text": "8 + 8 = 16 (gap 119)", "prior": 0.1783, "policy": 0.1783, "visits": 0, "q": null}, {"text": "8 * 8 = 64 (gap 71)", "prior": 0.1519, "policy": 0.1519, "visits": 0, "q": null}, {"text": "8 / 8 = 1 (gap 129)", "prior": 0.1693, "policy": 0.1693, "visits": 0, "q": null}], "selected": 3, "chosen": 3, "nn_value": 0.5391, "root_value": 0.5391, "simulations": 0}, {"render": {"kind": "countdown", "target": 135, "numbers": [6, 16], "history": ["9 - 1 = 8", "8 + 8 = 16"], "use_all": false}, "text": "Target: 135. Numbers: 6, 16.", "actions": [{"text": "16 + 6 = 22 (gap 113)", "prior": 0.3488, "policy": 0.3488, "visits": 0, "q": null}, {"text": "16 - 6 = 10 (gap 125)", "prior": 0.3197, "policy": 0.3197, "visits": 0, "q": null}, {"text": "16 * 6 = 96 (gap 39)", "prior": 0.3316, "policy": 0.3316, "visits": 0, "q": null}], "selected": 0, "chosen": 0, "nn_value": 0.4311, "root_value": 0.4311, "simulations": 0}], "final": {"render": {"kind": "countdown", "target": 135, "numbers": [22], "history": ["9 - 1 = 8", "8 + 8 = 16", "16 + 6 = 22"], "use_all": false}, "text": "Target: 135. Numbers: 22."}, "outcome": {"success": false, "reward": 0.0, "moves": 3}}, "puct16": {"steps": [{"render": {"kind": "countdown", "target": 135, "numbers": [1, 6, 8, 9], "history": [], "use_all": false}, "text": "Target: 135. Numbers: 1, 6, 8, 9.", "actions": [{"text": "6 + 1 = 7 (gap 126)", "prior": 0.0736, "policy": 0.125, "visits": 2, "q": 0.4958}, {"text": "6 - 1 = 5 (gap 126)", "prior": 0.0749, "policy": 0.0625, "visits": 1, "q": 0.5781}, {"text": "8 + 1 = 9 (gap 126)", "prior": 0.0759, "policy": 0.0625, "visits": 1, "q": 0.5562}, {"text": "8 - 1 = 7 (gap 126)", "prior": 0.0715, "policy": 0.0625, "visits": 1, "q": 0.568}, {"text": "9 + 1 = 10 (gap 125)", "prior": 0.0607, "policy": 0.0625, "visits": 1, "q": 0.5786}, {"text": "9 - 1 = 8 (gap 127)", "prior": 0.0847, "policy": 0.0625, "visits": 1, "q": 0.5391}, {"text": "8 + 6 = 14 (gap 121)", "prior": 0.0578, "policy": 0.0625, "visits": 1, "q": 0.5547}, {"text": "8 - 6 = 2 (gap 126)", "prior": 0.0646, "policy": 0.0625, "visits": 1, "q": 0.5449}, {"text": "8 * 6 = 48 (gap 87)", "prior": 0.06, "policy": 0.0625, "visits": 1, "q": 0.5184}, {"text": "9 + 6 = 15 (gap 120)", "prior": 0.06, "policy": 0.0625, "visits": 1, "q": 0.5326}, {"text": "9 - 6 = 3 (gap 127)", "prior": 0.0632, "policy": 0.0625, "visits": 1, "q": 0.5413}, {"text": "9 * 6 = 54 (gap 81)", "prior": 0.0568, "policy": 0.0625, "visits": 1, "q": 0.548}, {"text": "9 + 8 = 17 (gap 118)", "prior": 0.0624, "policy": 0.0625, "visits": 1, "q": 0.5133}, {"text": "9 - 8 = 1 (gap 129)", "prior": 0.0705, "policy": 0.0625, "visits": 1, "q": 0.4917}, {"text": "9 * 8 = 72 (gap 63)", "prior": 0.0633, "policy": 0.0625, "visits": 1, "q": 0.5123}], "selected": 0, "chosen": 0, "nn_value": 0.6219, "root_value": 0.5406, "simulations": 16, "tree": {"a": null, "p": 1.0, "n": 17, "q": 0.5406, "children": [{"a": "6 + 1 = 7 (gap 126)", "p": 0.0736, "n": 2, "q": 0.4958, "children": [{"a": "9 * 8 = 72 (gap 63)", "p": 0.3249, "n": 1, "q": 0.4061, "children": [], "v": 0.4061, "hidden": 0}], "v": 0.5855, "s": "Target: 135. Numbers: 7, 8, 9.", "hidden": 0}, {"a": "6 - 1 = 5 (gap 126)", "p": 0.0749, "n": 1, "q": 0.5781, "children": [], "v": 0.5781, "hidden": 0}, {"a": "8 + 1 = 9 (gap 126)", "p": 0.0759, "n": 1, "q": 0.5562, "children": [], "v": 0.5562, "hidden": 0}, {"a": "8 - 1 = 7 (gap 126)", "p": 0.0715, "n": 1, "q": 0.568, "children": [], "v": 0.568, "hidden": 0}, {"a": "9 + 1 = 10 (gap 125)", "p": 0.0607, "n": 1, "q": 0.5786, "children": [], "v": 0.5786, "hidden": 0}, {"a": "9 - 1 = 8 (gap 127)", "p": 0.0847, "n": 1, "q": 0.5391, "children": [], "v": 0.5391, "hidden": 0}, {"a": "8 + 6 = 14 (gap 121)", "p": 0.0578, "n": 1, "q": 0.5547, "children": [], "v": 0.5547, "hidden": 0}, {"a": "8 - 6 = 2 (gap 126)", "p": 0.0646, "n": 1, "q": 0.5449, "children": [], "v": 0.5449, "hidden": 0}], "v": 0.6219, "s": "Target: 135. Numbers: 1, 6, 8, 9.", "hidden": 7, "size": 10}}, {"render": {"kind": "countdown", "target": 135, "numbers": [7, 8, 9], "history": ["6 + 1 = 7"], "use_all": false}, "text": "Target: 135. Numbers: 7, 8, 9.", "actions": [{"text": "8 + 7 = 15 (gap 120)", "prior": 0.0649, "policy": 0.3125, "visits": 5, "q": 0.8857}, {"text": "8 - 7 = 1 (gap 126)", "prior": 0.0663, "policy": 0.125, "visits": 2, "q": -0.306}, {"text": "8 * 7 = 56 (gap 79)", "prior": 0.0603, "policy": 0.0625, "visits": 1, "q": 0.4235}, {"text": "9 + 7 = 16 (gap 119)", "prior": 0.0667, "policy": 0.125, "visits": 2, "q": -0.2855}, {"text": "9 - 7 = 2 (gap 127)", "prior": 0.0601, "policy": 0.0, "visits": 0, "q": null}, {"text": "9 * 7 = 63 (gap 72)", "prior": 0.2397, "policy": 0.1875, "visits": 3, "q": -0.5309}, {"text": "9 + 8 = 17 (gap 118)", "prior": 0.0571, "policy": 0.0, "visits": 0, "q": null}, {"text": "9 - 8 = 1 (gap 128)", "prior": 0.0599, "policy": 0.0, "visits": 0, "q": null}, {"text": "9 * 8 = 72 (gap 63)", "prior": 0.3249, "policy": 0.1875, "visits": 3, "q": -0.5313}], "selected": 0, "chosen": 0, "nn_value": 0.5855, "root_value": 0.0628, "simulations": 16, "tree": {"a": null, "p": 1.0, "n": 17, "q": 0.0628, "children": [{"a": "8 + 7 = 15 (gap 120)", "p": 0.0649, "n": 5, "q": 0.8857, "children": [{"a": "15 * 9 = 135 (gap 0)", "p": 0.9912, "n": 4, "q": 1.0, "children": [], "t": true, "tv": 1.0, "ok": true, "s": "Target: 135. Numbers: 135.", "hidden": 0}], "v": 0.4286, "s": "Target: 135. Numbers: 9, 15.", "hidden": 0}, {"a": "9 * 7 = 63 (gap 72)", "p": 0.2397, "n": 3, "q": -0.5309, "children": [{"a": "63 + 8 = 71 (gap 64)", "p": 0.3362, "n": 1, "q": -1.0, "children": [], "t": true, "tv": -1.0, "ok": false, "s": "Target: 135. Numbers: 71.", "hidden": 0}, {"a": "63 * 8 = 504 (gap 369)", "p": 0.3375, "n": 1, "q": -1.0, "children": [], "t": true, "tv": -1.0, "ok": false, "s": "Target: 135. Numbers: 504.", "hidden": 0}], "v": 0.4072, "s": "Target: 135. Numbers: 8, 63.", "hidden": 0}, {"a": "9 * 8 = 72 (gap 63)", "p": 0.3249, "n": 3, "q": -0.5313, "children": [{"a": "72 + 7 = 79 (gap 56)", "p": 0.3491, "n": 1, "q": -1.0, "children": [], "t": true, "tv": -1.0, "ok": false, "s": "Target: 135. Numbers: 79.", "hidden": 0}, {"a": "72 - 7 = 65 (gap 70)", "p": 0.3278, "n": 1, "q": -1.0, "children": [], "t": true, "tv": -1.0, "ok": false, "s": "Target: 135. Numbers: 65.", "hidden": 0}], "v": 0.4061, "s": "Target: 135. Numbers: 7, 72.", "hidden": 0}, {"a": "8 - 7 = 1 (gap 126)", "p": 0.0663, "n": 2, "q": -0.306, "children": [{"a": "9 - 1 = 8 (gap 127)", "p": 0.5009, "n": 1, "q": -1.0, "children": [], "t": true, "tv": -1.0, "ok": false, "s": "Target: 135. Numbers: 8.", "hidden": 0}], "v": 0.388, "s": "Target: 135. Numbers: 1, 9.", "hidden": 0}, {"a": "9 + 7 = 16 (gap 119)", "p": 0.0667, "n": 2, "q": -0.2855, "children": [{"a": "16 * 8 = 128 (gap 7)", "p": 0.3159, "n": 1, "q": -1.0, "children": [], "t": true, "tv": -1.0, "ok": false, "s": "Target: 135. Numbers: 128.", "hidden": 0}], "v": 0.4289, "s": "Target: 135. Numbers: 8, 16.", "hidden": 0}, {"a": "8 * 7 = 56 (gap 79)", "p": 0.0603, "n": 1, "q": 0.4235, "children": [], "v": 0.4235, "hidden": 0}], "v": 0.5855, "s": "Target: 135. Numbers: 7, 8, 9.", "hidden": 0, "size": 14}}, {"render": {"kind": "countdown", "target": 135, "numbers": [9, 15], "history": ["6 + 1 = 7", "8 + 7 = 15"], "use_all": false}, "text": "Target: 135. Numbers: 9, 15.", "actions": [{"text": "15 + 9 = 24 (gap 111)", "prior": 0.0044, "policy": 0.0, "visits": 0, "q": null}, {"text": "15 - 9 = 6 (gap 129)", "prior": 0.0044, "policy": 0.0, "visits": 0, "q": null}, {"text": "15 * 9 = 135 (gap 0)", "prior": 0.9912, "policy": 1.0, "visits": 16, "q": 1.0}], "selected": 2, "chosen": 2, "nn_value": 0.4286, "root_value": 0.9664, "simulations": 16, "tree": {"a": null, "p": 1.0, "n": 17, "q": 0.9664, "children": [{"a": "15 * 9 = 135 (gap 0)", "p": 0.9912, "n": 16, "q": 1.0, "children": [], "t": true, "tv": 1.0, "ok": true, "s": "Target: 135. Numbers: 135.", "hidden": 0}], "v": 0.4286, "s": "Target: 135. Numbers: 9, 15.", "hidden": 0, "size": 2}}], "final": {"render": {"kind": "countdown", "target": 135, "numbers": [135], "history": ["6 + 1 = 7", "8 + 7 = 15", "15 * 9 = 135"], "use_all": false}, "text": "Target: 135. Numbers: 135."}, "outcome": {"success": true, "reward": 1.0, "moves": 3}}, "uniform-puct16": {"steps": [{"render": {"kind": "countdown", "target": 135, "numbers": [1, 6, 8, 9], "history": [], "use_all": false}, "text": "Target: 135. Numbers: 1, 6, 8, 9.", "actions": [{"text": "6 + 1 = 7 (gap 126)", "prior": 0.0667, "policy": 0.125, "visits": 2, "q": 0.0}, {"text": "6 - 1 = 5 (gap 126)", "prior": 0.0667, "policy": 0.0625, "visits": 1, "q": 0.0}, {"text": "8 + 1 = 9 (gap 126)", "prior": 0.0667, "policy": 0.0625, "visits": 1, "q": 0.0}, {"text": "8 - 1 = 7 (gap 126)", "prior": 0.0667, "policy": 0.0625, "visits": 1, "q": 0.0}, {"text": "9 + 1 = 10 (gap 125)", "prior": 0.0667, "policy": 0.0625, "visits": 1, "q": 0.0}, {"text": "9 - 1 = 8 (gap 127)", "prior": 0.0667, "policy": 0.0625, "visits": 1, "q": 0.0}, {"text": "8 + 6 = 14 (gap 121)", "prior": 0.0667, "policy": 0.0625, "visits": 1, "q": 0.0}, {"text": "8 - 6 = 2 (gap 126)", "prior": 0.0667, "policy": 0.0625, "visits": 1, "q": 0.0}, {"text": "8 * 6 = 48 (gap 87)", "prior": 0.0667, "policy": 0.0625, "visits": 1, "q": 0.0}, {"text": "9 + 6 = 15 (gap 120)", "prior": 0.0667, "policy": 0.0625, "visits": 1, "q": 0.0}, {"text": "9 - 6 = 3 (gap 127)", "prior": 0.0667, "policy": 0.0625, "visits": 1, "q": 0.0}, {"text": "9 * 6 = 54 (gap 81)", "prior": 0.0667, "policy": 0.0625, "visits": 1, "q": 0.0}, {"text": "9 + 8 = 17 (gap 118)", "prior": 0.0667, "policy": 0.0625, "visits": 1, "q": 0.0}, {"text": "9 - 8 = 1 (gap 129)", "prior": 0.0667, "policy": 0.0625, "visits": 1, "q": 0.0}, {"text": "9 * 8 = 72 (gap 63)", "prior": 0.0667, "policy": 0.0625, "visits": 1, "q": 0.0}], "selected": 0, "chosen": 0, "nn_value": 0.0, "root_value": 0.0, "simulations": 16}, {"render": {"kind": "countdown", "target": 135, "numbers": [7, 8, 9], "history": ["6 + 1 = 7"], "use_all": false}, "text": "Target: 135. Numbers: 7, 8, 9.", "actions": [{"text": "8 + 7 = 15 (gap 120)", "prior": 0.1111, "policy": 0.125, "visits": 2, "q": -0.5}, {"text": "8 - 7 = 1 (gap 126)", "prior": 0.1111, "policy": 0.125, "visits": 2, "q": -0.5}, {"text": "8 * 7 = 56 (gap 79)", "prior": 0.1111, "policy": 0.125, "visits": 2, "q": -0.5}, {"text": "9 + 7 = 16 (gap 119)", "prior": 0.1111, "policy": 0.125, "visits": 2, "q": -0.5}, {"text": "9 - 7 = 2 (gap 127)", "prior": 0.1111, "policy": 0.125, "visits": 2, "q": -0.5}, {"text": "9 * 7 = 63 (gap 72)", "prior": 0.1111, "policy": 0.125, "visits": 2, "q": -0.5}, {"text": "9 + 8 = 17 (gap 118)", "prior": 0.1111, "policy": 0.125, "visits": 2, "q": -0.5}, {"text": "9 - 8 = 1 (gap 128)", "prior": 0.1111, "policy": 0.0625, "visits": 1, "q": 0.0}, {"text": "9 * 8 = 72 (gap 63)", "prior": 0.1111, "policy": 0.0625, "visits": 1, "q": 0.0}], "selected": 0, "chosen": 0, "nn_value": 0.0, "root_value": -0.4118, "simulations": 16}, {"render": {"kind": "countdown", "target": 135, "numbers": [9, 15], "history": ["6 + 1 = 7", "8 + 7 = 15"], "use_all": false}, "text": "Target: 135. Numbers: 9, 15.", "actions": [{"text": "15 + 9 = 24 (gap 111)", "prior": 0.3333, "policy": 0.0625, "visits": 1, "q": -1.0}, {"text": "15 - 9 = 6 (gap 129)", "prior": 0.3333, "policy": 0.0625, "visits": 1, "q": -1.0}, {"text": "15 * 9 = 135 (gap 0)", "prior": 0.3333, "policy": 0.875, "visits": 14, "q": 1.0}], "selected": 2, "chosen": 2, "nn_value": 0.0, "root_value": 0.7059, "simulations": 16}], "final": {"render": {"kind": "countdown", "target": 135, "numbers": [135], "history": ["6 + 1 = 7", "8 + 7 = 15", "15 * 9 = 135"], "use_all": false}, "text": "Target: 135. Numbers: 135."}, "outcome": {"success": true, "reward": 1.0, "moves": 3}}, "uniform-gumbel16": {"steps": [{"render": {"kind": "countdown", "target": 135, "numbers": [1, 6, 8, 9], "history": [], "use_all": false}, "text": "Target: 135. Numbers: 1, 6, 8, 9.", "actions": [{"text": "6 + 1 = 7 (gap 126)", "prior": 0.0667, "policy": 0.0667, "visits": 4, "q": 0.0}, {"text": "6 - 1 = 5 (gap 126)", "prior": 0.0667, "policy": 0.0667, "visits": 4, "q": 0.0}, {"text": "8 + 1 = 9 (gap 126)", "prior": 0.0667, "policy": 0.0667, "visits": 2, "q": 0.0}, {"text": "8 - 1 = 7 (gap 126)", "prior": 0.0667, "policy": 0.0667, "visits": 2, "q": 0.0}, {"text": "9 + 1 = 10 (gap 125)", "prior": 0.0667, "policy": 0.0667, "visits": 1, "q": 0.0}, {"text": "9 - 1 = 8 (gap 127)", "prior": 0.0667, "policy": 0.0667, "visits": 1, "q": 0.0}, {"text": "8 + 6 = 14 (gap 121)", "prior": 0.0667, "policy": 0.0667, "visits": 1, "q": 0.0}, {"text": "8 - 6 = 2 (gap 126)", "prior": 0.0667, "policy": 0.0667, "visits": 1, "q": 0.0}, {"text": "8 * 6 = 48 (gap 87)", "prior": 0.0667, "policy": 0.0667, "visits": 0, "q": null}, {"text": "9 + 6 = 15 (gap 120)", "prior": 0.0667, "policy": 0.0667, "visits": 0, "q": null}, {"text": "9 - 6 = 3 (gap 127)", "prior": 0.0667, "policy": 0.0667, "visits": 0, "q": null}, {"text": "9 * 6 = 54 (gap 81)", "prior": 0.0667, "policy": 0.0667, "visits": 0, "q": null}, {"text": "9 + 8 = 17 (gap 118)", "prior": 0.0667, "policy": 0.0667, "visits": 0, "q": null}, {"text": "9 - 8 = 1 (gap 129)", "prior": 0.0667, "policy": 0.0667, "visits": 0, "q": null}, {"text": "9 * 8 = 72 (gap 63)", "prior": 0.0667, "policy": 0.0667, "visits": 0, "q": null}], "selected": 0, "chosen": 0, "nn_value": 0.0, "root_value": 0.0, "simulations": 16}, {"render": {"kind": "countdown", "target": 135, "numbers": [7, 8, 9], "history": ["6 + 1 = 7"], "use_all": false}, "text": "Target: 135. Numbers: 7, 8, 9.", "actions": [{"text": "8 + 7 = 15 (gap 120)", "prior": 0.1111, "policy": 0.0003, "visits": 4, "q": -0.25}, {"text": "8 - 7 = 1 (gap 126)", "prior": 0.1111, "policy": 0.0, "visits": 4, "q": -0.75}, {"text": "8 * 7 = 56 (gap 79)", "prior": 0.1111, "policy": 0.0, "visits": 2, "q": -0.5}, {"text": "9 + 7 = 16 (gap 119)", "prior": 0.1111, "policy": 0.0, "visits": 2, "q": -0.5}, {"text": "9 - 7 = 2 (gap 127)", "prior": 0.1111, "policy": 0.2498, "visits": 1, "q": 0.0}, {"text": "9 * 7 = 63 (gap 72)", "prior": 0.1111, "policy": 0.2498, "visits": 1, "q": 0.0}, {"text": "9 + 8 = 17 (gap 118)", "prior": 0.1111, "policy": 0.2498, "visits": 1, "q": 0.0}, {"text": "9 - 8 = 1 (gap 128)", "prior": 0.1111, "policy": 0.2498, "visits": 1, "q": 0.0}, {"text": "9 * 8 = 72 (gap 63)", "prior": 0.1111, "policy": 0.0004, "visits": 0, "q": null}], "selected": 0, "chosen": 0, "nn_value": 0.0, "root_value": -0.0002, "simulations": 16}, {"render": {"kind": "countdown", "target": 135, "numbers": [9, 15], "history": ["6 + 1 = 7", "8 + 7 = 15"], "use_all": false}, "text": "Target: 135. Numbers: 9, 15.", "actions": [{"text": "15 + 9 = 24 (gap 111)", "prior": 0.3333, "policy": 0.0, "visits": 6, "q": -1.0}, {"text": "15 - 9 = 6 (gap 129)", "prior": 0.3333, "policy": 0.0, "visits": 2, "q": -1.0}, {"text": "15 * 9 = 135 (gap 0)", "prior": 0.3333, "policy": 1.0, "visits": 8, "q": 1.0}], "selected": 2, "chosen": 2, "nn_value": 0.0, "root_value": 1.0, "simulations": 16}], "final": {"render": {"kind": "countdown", "target": 135, "numbers": [135], "history": ["6 + 1 = 7", "8 + 7 = 15", "15 * 9 = 135"], "use_all": false}, "text": "Target: 135. Numbers: 135."}, "outcome": {"success": true, "reward": 1.0, "moves": 3}}, "rollout-puct16": {"steps": [{"render": {"kind": "countdown", "target": 135, "numbers": [1, 6, 8, 9], "history": [], "use_all": false}, "text": "Target: 135. Numbers: 1, 6, 8, 9.", "actions": [{"text": "6 + 1 = 7 (gap 126)", "prior": 0.0667, "policy": 0.125, "visits": 2, "q": 0.0}, {"text": "6 - 1 = 5 (gap 126)", "prior": 0.0667, "policy": 0.0625, "visits": 1, "q": -1.0}, {"text": "8 + 1 = 9 (gap 126)", "prior": 0.0667, "policy": 0.0625, "visits": 1, "q": -1.0}, {"text": "8 - 1 = 7 (gap 126)", "prior": 0.0667, "policy": 0.0625, "visits": 1, "q": -1.0}, {"text": "9 + 1 = 10 (gap 125)", "prior": 0.0667, "policy": 0.0625, "visits": 1, "q": -1.0}, {"text": "9 - 1 = 8 (gap 127)", "prior": 0.0667, "policy": 0.0625, "visits": 1, "q": -1.0}, {"text": "8 + 6 = 14 (gap 121)", "prior": 0.0667, "policy": 0.0625, "visits": 1, "q": -1.0}, {"text": "8 - 6 = 2 (gap 126)", "prior": 0.0667, "policy": 0.0625, "visits": 1, "q": -1.0}, {"text": "8 * 6 = 48 (gap 87)", "prior": 0.0667, "policy": 0.0625, "visits": 1, "q": -1.0}, {"text": "9 + 6 = 15 (gap 120)", "prior": 0.0667, "policy": 0.0625, "visits": 1, "q": -1.0}, {"text": "9 - 6 = 3 (gap 127)", "prior": 0.0667, "policy": 0.0625, "visits": 1, "q": -1.0}, {"text": "9 * 6 = 54 (gap 81)", "prior": 0.0667, "policy": 0.0625, "visits": 1, "q": -1.0}, {"text": "9 + 8 = 17 (gap 118)", "prior": 0.0667, "policy": 0.0625, "visits": 1, "q": -1.0}, {"text": "9 - 8 = 1 (gap 129)", "prior": 0.0667, "policy": 0.0625, "visits": 1, "q": -1.0}, {"text": "9 * 8 = 72 (gap 63)", "prior": 0.0667, "policy": 0.0625, "visits": 1, "q": -1.0}], "selected": 0, "chosen": 0, "nn_value": -1.0, "root_value": -0.8824, "simulations": 16}, {"render": {"kind": "countdown", "target": 135, "numbers": [7, 8, 9], "history": ["6 + 1 = 7"], "use_all": false}, "text": "Target: 135. Numbers: 7, 8, 9.", "actions": [{"text": "8 + 7 = 15 (gap 120)", "prior": 0.1111, "policy": 0.125, "visits": 2, "q": -1.0}, {"text": "8 - 7 = 1 (gap 126)", "prior": 0.1111, "policy": 0.125, "visits": 2, "q": -1.0}, {"text": "8 * 7 = 56 (gap 79)", "prior": 0.1111, "policy": 0.125, "visits": 2, "q": -1.0}, {"text": "9 + 7 = 16 (gap 119)", "prior": 0.1111, "policy": 0.125, "visits": 2, "q": -1.0}, {"text": "9 - 7 = 2 (gap 127)", "prior": 0.1111, "policy": 0.125, "visits": 2, "q": -1.0}, {"text": "9 * 7 = 63 (gap 72)", "prior": 0.1111, "policy": 0.125, "visits": 2, "q": -1.0}, {"text": "9 + 8 = 17 (gap 118)", "prior": 0.1111, "policy": 0.125, "visits": 2, "q": -1.0}, {"text": "9 - 8 = 1 (gap 128)", "prior": 0.1111, "policy": 0.0625, "visits": 1, "q": -1.0}, {"text": "9 * 8 = 72 (gap 63)", "prior": 0.1111, "policy": 0.0625, "visits": 1, "q": -1.0}], "selected": 0, "chosen": 0, "nn_value": -1.0, "root_value": -1.0, "simulations": 16}, {"render": {"kind": "countdown", "target": 135, "numbers": [9, 15], "history": ["6 + 1 = 7", "8 + 7 = 15"], "use_all": false}, "text": "Target: 135. Numbers: 9, 15.", "actions": [{"text": "15 + 9 = 24 (gap 111)", "prior": 0.3333, "policy": 0.0625, "visits": 1, "q": -1.0}, {"text": "15 - 9 = 6 (gap 129)", "prior": 0.3333, "policy": 0.0625, "visits": 1, "q": -1.0}, {"text": "15 * 9 = 135 (gap 0)", "prior": 0.3333, "policy": 0.875, "visits": 14, "q": 1.0}], "selected": 2, "chosen": 2, "nn_value": -1.0, "root_value": 0.6471, "simulations": 16}], "final": {"render": {"kind": "countdown", "target": 135, "numbers": [135], "history": ["6 + 1 = 7", "8 + 7 = 15", "15 * 9 = 135"], "use_all": false}, "text": "Target: 135. Numbers: 135."}, "outcome": {"success": true, "reward": 1.0, "moves": 3}}, "teacher": {"steps": [{"render": {"kind": "countdown", "target": 135, "numbers": [1, 6, 8, 9], "history": [], "use_all": false}, "text": "Target: 135. Numbers: 1, 6, 8, 9.", "actions": [{"text": "6 + 1 = 7 (gap 126)", "prior": 0.25, "policy": 0.25, "visits": 0, "q": 0.0}, {"text": "6 - 1 = 5 (gap 126)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "8 + 1 = 9 (gap 126)", "prior": 0.25, "policy": 0.25, "visits": 0, "q": 0.0}, {"text": "8 - 1 = 7 (gap 126)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "9 + 1 = 10 (gap 125)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "9 - 1 = 8 (gap 127)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "8 + 6 = 14 (gap 121)", "prior": 0.25, "policy": 0.25, "visits": 0, "q": 0.0}, {"text": "8 - 6 = 2 (gap 126)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "8 * 6 = 48 (gap 87)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "9 + 6 = 15 (gap 120)", "prior": 0.25, "policy": 0.25, "visits": 0, "q": 0.0}, {"text": "9 - 6 = 3 (gap 127)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "9 * 6 = 54 (gap 81)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "9 + 8 = 17 (gap 118)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "9 - 8 = 1 (gap 129)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "9 * 8 = 72 (gap 63)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}], "selected": 0, "chosen": 0, "nn_value": null, "root_value": 1.0, "simulations": 0}, {"render": {"kind": "countdown", "target": 135, "numbers": [7, 8, 9], "history": ["6 + 1 = 7"], "use_all": false}, "text": "Target: 135. Numbers: 7, 8, 9.", "actions": [{"text": "8 + 7 = 15 (gap 120)", "prior": 1.0, "policy": 1.0, "visits": 0, "q": 0.0}, {"text": "8 - 7 = 1 (gap 126)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "8 * 7 = 56 (gap 79)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "9 + 7 = 16 (gap 119)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "9 - 7 = 2 (gap 127)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "9 * 7 = 63 (gap 72)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "9 + 8 = 17 (gap 118)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "9 - 8 = 1 (gap 128)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "9 * 8 = 72 (gap 63)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}], "selected": 0, "chosen": 0, "nn_value": null, "root_value": 1.0, "simulations": 0}, {"render": {"kind": "countdown", "target": 135, "numbers": [9, 15], "history": ["6 + 1 = 7", "8 + 7 = 15"], "use_all": false}, "text": "Target: 135. Numbers: 9, 15.", "actions": [{"text": "15 + 9 = 24 (gap 111)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "15 - 9 = 6 (gap 129)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "15 * 9 = 135 (gap 0)", "prior": 1.0, "policy": 1.0, "visits": 0, "q": 0.0}], "selected": 2, "chosen": 2, "nn_value": null, "root_value": 1.0, "simulations": 0}], "final": {"render": {"kind": "countdown", "target": 135, "numbers": [135], "history": ["6 + 1 = 7", "8 + 7 = 15", "15 * 9 = 135"], "use_all": false}, "text": "Target: 135. Numbers: 135."}, "outcome": {"success": true, "reward": 1.0, "moves": 3}}}, "p1": {"greedy": {"steps": [{"render": {"kind": "countdown", "target": 70, "numbers": [1, 2, 4, 75], "history": [], "use_all": false}, "text": "Target: 70. Numbers: 1, 2, 4, 75.", "actions": [{"text": "2 + 1 = 3 (gap 5)", "prior": 0.0643, "policy": 0.0643, "visits": 0, "q": null}, {"text": "2 - 1 = 1 (gap 5)", "prior": 0.026, "policy": 0.026, "visits": 0, "q": null}, {"text": "4 + 1 = 5 (gap 5)", "prior": 0.1052, "policy": 0.1052, "visits": 0, "q": null}, {"text": "4 - 1 = 3 (gap 5)", "prior": 0.0589, "policy": 0.0589, "visits": 0, "q": null}, {"text": "75 + 1 = 76 (gap 6)", "prior": 0.0802, "policy": 0.0802, "visits": 0, "q": null}, {"text": "75 - 1 = 74 (gap 4)", "prior": 0.1374, "policy": 0.1374, "visits": 0, "q": null}, {"text": "4 + 2 = 6 (gap 5)", "prior": 0.1059, "policy": 0.1059, "visits": 0, "q": null}, {"text": "4 - 2 = 2 (gap 5)", "prior": 0.0249, "policy": 0.0249, "visits": 0, "q": null}, {"text": "4 * 2 = 8 (gap 5)", "prior": 0.0241, "policy": 0.0241, "visits": 0, "q": null}, {"text": "4 / 2 = 2 (gap 5)", "prior": 0.0258, "policy": 0.0258, "visits": 0, "q": null}, {"text": "75 + 2 = 77 (gap 7)", "prior": 0.0269, "policy": 0.0269, "visits": 0, "q": null}, {"text": "75 - 2 = 73 (gap 3)", "prior": 0.0584, "policy": 0.0584, "visits": 0, "q": null}, {"text": "75 * 2 = 150 (gap 66)", "prior": 0.0209, "policy": 0.0209, "visits": 0, "q": null}, {"text": "75 + 4 = 79 (gap 9)", "prior": 0.0259, "policy": 0.0259, "visits": 0, "q": null}, {"text": "75 - 4 = 71 (gap 1)", "prior": 0.1938, "policy": 0.1938, "visits": 0, "q": null}, {"text": "75 * 4 = 300 (gap 68)", "prior": 0.0213, "policy": 0.0213, "visits": 0, "q": null}], "selected": 14, "chosen": 14, "nn_value": 0.6535, "root_value": 0.6535, "simulations": 0}, {"render": {"kind": "countdown", "target": 70, "numbers": [1, 2, 71], "history": ["75 - 4 = 71"], "use_all": false}, "text": "Target: 70. Numbers: 1, 2, 71.", "actions": [{"text": "2 + 1 = 3 (gap 1)", "prior": 0.0129, "policy": 0.0129, "visits": 0, "q": null}, {"text": "2 - 1 = 1 (gap 1)", "prior": 0.0141, "policy": 0.0141, "visits": 0, "q": null}, {"text": "71 + 1 = 72 (gap 2)", "prior": 0.0144, "policy": 0.0144, "visits": 0, "q": null}, {"text": "71 - 1 = 70 (gap 0)", "prior": 0.9322, "policy": 0.9322, "visits": 0, "q": null}, {"text": "71 + 2 = 73 (gap 3)", "prior": 0.0038, "policy": 0.0038, "visits": 0, "q": null}, {"text": "71 - 2 = 69 (gap 1)", "prior": 0.02, "policy": 0.02, "visits": 0, "q": null}, {"text": "71 * 2 = 142 (gap 69)", "prior": 0.0027, "policy": 0.0027, "visits": 0, "q": null}], "selected": 3, "chosen": 3, "nn_value": 0.5775, "root_value": 0.5775, "simulations": 0}], "final": {"render": {"kind": "countdown", "target": 70, "numbers": [2, 70], "history": ["75 - 4 = 71", "71 - 1 = 70"], "use_all": false}, "text": "Target: 70. Numbers: 2, 70."}, "outcome": {"success": true, "reward": 1.0, "moves": 2}}, "puct16": {"steps": [{"render": {"kind": "countdown", "target": 70, "numbers": [1, 2, 4, 75], "history": [], "use_all": false}, "text": "Target: 70. Numbers: 1, 2, 4, 75.", "actions": [{"text": "2 + 1 = 3 (gap 5)", "prior": 0.0643, "policy": 0.0625, "visits": 1, "q": 0.5963}, {"text": "2 - 1 = 1 (gap 5)", "prior": 0.026, "policy": 0.0, "visits": 0, "q": null}, {"text": "4 + 1 = 5 (gap 5)", "prior": 0.1052, "policy": 0.0625, "visits": 1, "q": 0.58}, {"text": "4 - 1 = 3 (gap 5)", "prior": 0.0589, "policy": 0.0625, "visits": 1, "q": 0.5774}, {"text": "75 + 1 = 76 (gap 6)", "prior": 0.0802, "policy": 0.0625, "visits": 1, "q": 0.5785}, {"text": "75 - 1 = 74 (gap 4)", "prior": 0.1374, "policy": 0.0625, "visits": 1, "q": 0.5949}, {"text": "4 + 2 = 6 (gap 5)", "prior": 0.1059, "policy": 0.0625, "visits": 1, "q": 0.5587}, {"text": "4 - 2 = 2 (gap 5)", "prior": 0.0249, "policy": 0.0, "visits": 0, "q": null}, {"text": "4 * 2 = 8 (gap 5)", "prior": 0.0241, "policy": 0.0, "visits": 0, "q": null}, {"text": "4 / 2 = 2 (gap 5)", "prior": 0.0258, "policy": 0.0, "visits": 0, "q": null}, {"text": "75 + 2 = 77 (gap 7)", "prior": 0.0269, "policy": 0.0, "visits": 0, "q": null}, {"text": "75 - 2 = 73 (gap 3)", "prior": 0.0584, "policy": 0.0625, "visits": 1, "q": 0.5797}, {"text": "75 * 2 = 150 (gap 66)", "prior": 0.0209, "policy": 0.0, "visits": 0, "q": null}, {"text": "75 + 4 = 79 (gap 9)", "prior": 0.0259, "policy": 0.0, "visits": 0, "q": null}, {"text": "75 - 4 = 71 (gap 1)", "prior": 0.1938, "policy": 0.5625, "visits": 9, "q": 0.9531}, {"text": "75 * 4 = 300 (gap 68)", "prior": 0.0213, "policy": 0.0, "visits": 0, "q": null}], "selected": 14, "chosen": 14, "nn_value": 0.6535, "root_value": 0.7821, "simulations": 16, "tree": {"a": null, "p": 1.0, "n": 17, "q": 0.7821, "children": [{"a": "75 - 4 = 71 (gap 1)", "p": 0.1938, "n": 9, "q": 0.9531, "children": [{"a": "71 - 1 = 70 (gap 0)", "p": 0.9322, "n": 8, "q": 1.0, "children": [], "t": true, "tv": 1.0, "ok": true, "s": "Target: 70. Numbers: 2, 70.", "hidden": 0}], "v": 0.5775, "s": "Target: 70. Numbers: 1, 2, 71.", "hidden": 0}, {"a": "2 + 1 = 3 (gap 5)", "p": 0.0643, "n": 1, "q": 0.5963, "children": [], "v": 0.5963, "hidden": 0}, {"a": "4 + 1 = 5 (gap 5)", "p": 0.1052, "n": 1, "q": 0.58, "children": [], "v": 0.58, "hidden": 0}, {"a": "4 - 1 = 3 (gap 5)", "p": 0.0589, "n": 1, "q": 0.5774, "children": [], "v": 0.5774, "hidden": 0}, {"a": "75 + 1 = 76 (gap 6)", "p": 0.0802, "n": 1, "q": 0.5785, "children": [], "v": 0.5785, "hidden": 0}, {"a": "75 - 1 = 74 (gap 4)", "p": 0.1374, "n": 1, "q": 0.5949, "children": [], "v": 0.5949, "hidden": 0}, {"a": "4 + 2 = 6 (gap 5)", "p": 0.1059, "n": 1, "q": 0.5587, "children": [], "v": 0.5587, "hidden": 0}, {"a": "75 - 2 = 73 (gap 3)", "p": 0.0584, "n": 1, "q": 0.5797, "children": [], "v": 0.5797, "hidden": 0}], "v": 0.6535, "s": "Target: 70. Numbers: 1, 2, 4, 75.", "hidden": 0, "size": 10}}, {"render": {"kind": "countdown", "target": 70, "numbers": [1, 2, 71], "history": ["75 - 4 = 71"], "use_all": false}, "text": "Target: 70. Numbers: 1, 2, 71.", "actions": [{"text": "2 + 1 = 3 (gap 1)", "prior": 0.0129, "policy": 0.0, "visits": 0, "q": null}, {"text": "2 - 1 = 1 (gap 1)", "prior": 0.0141, "policy": 0.0, "visits": 0, "q": null}, {"text": "71 + 1 = 72 (gap 2)", "prior": 0.0144, "policy": 0.0, "visits": 0, "q": null}, {"text": "71 - 1 = 70 (gap 0)", "prior": 0.9322, "policy": 1.0, "visits": 16, "q": 1.0}, {"text": "71 + 2 = 73 (gap 3)", "prior": 0.0038, "policy": 0.0, "visits": 0, "q": null}, {"text": "71 - 2 = 69 (gap 1)", "prior": 0.02, "policy": 0.0, "visits": 0, "q": null}, {"text": "71 * 2 = 142 (gap 69)", "prior": 0.0027, "policy": 0.0, "visits": 0, "q": null}], "selected": 3, "chosen": 3, "nn_value": 0.5775, "root_value": 0.9751, "simulations": 16, "tree": {"a": null, "p": 1.0, "n": 17, "q": 0.9751, "children": [{"a": "71 - 1 = 70 (gap 0)", "p": 0.9322, "n": 16, "q": 1.0, "children": [], "t": true, "tv": 1.0, "ok": true, "s": "Target: 70. Numbers: 2, 70.", "hidden": 0}], "v": 0.5775, "s": "Target: 70. Numbers: 1, 2, 71.", "hidden": 0, "size": 2}}], "final": {"render": {"kind": "countdown", "target": 70, "numbers": [2, 70], "history": ["75 - 4 = 71", "71 - 1 = 70"], "use_all": false}, "text": "Target: 70. Numbers: 2, 70."}, "outcome": {"success": true, "reward": 1.0, "moves": 2}}, "uniform-puct16": {"steps": [{"render": {"kind": "countdown", "target": 70, "numbers": [1, 2, 4, 75], "history": [], "use_all": false}, "text": "Target: 70. Numbers: 1, 2, 4, 75.", "actions": [{"text": "2 + 1 = 3 (gap 5)", "prior": 0.0625, "policy": 0.0625, "visits": 1, "q": 0.0}, {"text": "2 - 1 = 1 (gap 5)", "prior": 0.0625, "policy": 0.0625, "visits": 1, "q": 0.0}, {"text": "4 + 1 = 5 (gap 5)", "prior": 0.0625, "policy": 0.0625, "visits": 1, "q": 0.0}, {"text": "4 - 1 = 3 (gap 5)", "prior": 0.0625, "policy": 0.0625, "visits": 1, "q": 0.0}, {"text": "75 + 1 = 76 (gap 6)", "prior": 0.0625, "policy": 0.0625, "visits": 1, "q": 0.0}, {"text": "75 - 1 = 74 (gap 4)", "prior": 0.0625, "policy": 0.0625, "visits": 1, "q": 0.0}, {"text": "4 + 2 = 6 (gap 5)", "prior": 0.0625, "policy": 0.0625, "visits": 1, "q": 0.0}, {"text": "4 - 2 = 2 (gap 5)", "prior": 0.0625, "policy": 0.0625, "visits": 1, "q": 0.0}, {"text": "4 * 2 = 8 (gap 5)", "prior": 0.0625, "policy": 0.0625, "visits": 1, "q": 0.0}, {"text": "4 / 2 = 2 (gap 5)", "prior": 0.0625, "policy": 0.0625, "visits": 1, "q": 0.0}, {"text": "75 + 2 = 77 (gap 7)", "prior": 0.0625, "policy": 0.0625, "visits": 1, "q": 0.0}, {"text": "75 - 2 = 73 (gap 3)", "prior": 0.0625, "policy": 0.0625, "visits": 1, "q": 0.0}, {"text": "75 * 2 = 150 (gap 66)", "prior": 0.0625, "policy": 0.0625, "visits": 1, "q": 0.0}, {"text": "75 + 4 = 79 (gap 9)", "prior": 0.0625, "policy": 0.0625, "visits": 1, "q": 0.0}, {"text": "75 - 4 = 71 (gap 1)", "prior": 0.0625, "policy": 0.0625, "visits": 1, "q": 0.0}, {"text": "75 * 4 = 300 (gap 68)", "prior": 0.0625, "policy": 0.0625, "visits": 1, "q": 0.0}], "selected": 0, "chosen": 0, "nn_value": 0.0, "root_value": 0.0, "simulations": 16}, {"render": {"kind": "countdown", "target": 70, "numbers": [3, 4, 75], "history": ["2 + 1 = 3"], "use_all": false}, "text": "Target: 70. Numbers: 3, 4, 75.", "actions": [{"text": "4 + 3 = 7 (gap 5)", "prior": 0.1, "policy": 0.125, "visits": 2, "q": -0.5}, {"text": "4 - 3 = 1 (gap 5)", "prior": 0.1, "policy": 0.125, "visits": 2, "q": -0.5}, {"text": "4 * 3 = 12 (gap 5)", "prior": 0.1, "policy": 0.125, "visits": 2, "q": -0.5}, {"text": "75 + 3 = 78 (gap 8)", "prior": 0.1, "policy": 0.125, "visits": 2, "q": -0.5}, {"text": "75 - 3 = 72 (gap 2)", "prior": 0.1, "policy": 0.125, "visits": 2, "q": -0.5}, {"text": "75 * 3 = 225 (gap 66)", "prior": 0.1, "policy": 0.125, "visits": 2, "q": -0.5}, {"text": "75 / 3 = 25 (gap 45)", "prior": 0.1, "policy": 0.0625, "visits": 1, "q": 0.0}, {"text": "75 + 4 = 79 (gap 9)", "prior": 0.1, "policy": 0.0625, "visits": 1, "q": 0.0}, {"text": "75 - 4 = 71 (gap 1)", "prior": 0.1, "policy": 0.0625, "visits": 1, "q": 0.0}, {"text": "75 * 4 = 300 (gap 67)", "prior": 0.1, "policy": 0.0625, "visits": 1, "q": 0.0}], "selected": 0, "chosen": 0, "nn_value": 0.0, "root_value": -0.3529, "simulations": 16}, {"render": {"kind": "countdown", "target": 70, "numbers": [7, 75], "history": ["2 + 1 = 3", "4 + 3 = 7"], "use_all": false}, "text": "Target: 70. Numbers: 7, 75.", "actions": [{"text": "75 + 7 = 82 (gap 12)", "prior": 0.3333, "policy": 0.375, "visits": 6, "q": -1.0}, {"text": "75 - 7 = 68 (gap 2)", "prior": 0.3333, "policy": 0.3125, "visits": 5, "q": -1.0}, {"text": "75 * 7 = 525 (gap 455)", "prior": 0.3333, "policy": 0.3125, "visits": 5, "q": -1.0}], "selected": 0, "chosen": 0, "nn_value": 0.0, "root_value": -0.9412, "simulations": 16}], "final": {"render": {"kind": "countdown", "target": 70, "numbers": [82], "history": ["2 + 1 = 3", "4 + 3 = 7", "75 + 7 = 82"], "use_all": false}, "text": "Target: 70. Numbers: 82."}, "outcome": {"success": false, "reward": 0.0, "moves": 3}}, "uniform-gumbel16": {"steps": [{"render": {"kind": "countdown", "target": 70, "numbers": [1, 2, 4, 75], "history": [], "use_all": false}, "text": "Target: 70. Numbers: 1, 2, 4, 75.", "actions": [{"text": "2 + 1 = 3 (gap 5)", "prior": 0.0625, "policy": 0.0625, "visits": 4, "q": 0.0}, {"text": "2 - 1 = 1 (gap 5)", "prior": 0.0625, "policy": 0.0625, "visits": 4, "q": 0.0}, {"text": "4 + 1 = 5 (gap 5)", "prior": 0.0625, "policy": 0.0625, "visits": 2, "q": 0.0}, {"text": "4 - 1 = 3 (gap 5)", "prior": 0.0625, "policy": 0.0625, "visits": 2, "q": 0.0}, {"text": "75 + 1 = 76 (gap 6)", "prior": 0.0625, "policy": 0.0625, "visits": 1, "q": 0.0}, {"text": "75 - 1 = 74 (gap 4)", "prior": 0.0625, "policy": 0.0625, "visits": 1, "q": 0.0}, {"text": "4 + 2 = 6 (gap 5)", "prior": 0.0625, "policy": 0.0625, "visits": 1, "q": 0.0}, {"text": "4 - 2 = 2 (gap 5)", "prior": 0.0625, "policy": 0.0625, "visits": 1, "q": 0.0}, {"text": "4 * 2 = 8 (gap 5)", "prior": 0.0625, "policy": 0.0625, "visits": 0, "q": null}, {"text": "4 / 2 = 2 (gap 5)", "prior": 0.0625, "policy": 0.0625, "visits": 0, "q": null}, {"text": "75 + 2 = 77 (gap 7)", "prior": 0.0625, "policy": 0.0625, "visits": 0, "q": null}, {"text": "75 - 2 = 73 (gap 3)", "prior": 0.0625, "policy": 0.0625, "visits": 0, "q": null}, {"text": "75 * 2 = 150 (gap 66)", "prior": 0.0625, "policy": 0.0625, "visits": 0, "q": null}, {"text": "75 + 4 = 79 (gap 9)", "prior": 0.0625, "policy": 0.0625, "visits": 0, "q": null}, {"text": "75 - 4 = 71 (gap 1)", "prior": 0.0625, "policy": 0.0625, "visits": 0, "q": null}, {"text": "75 * 4 = 300 (gap 68)", "prior": 0.0625, "policy": 0.0625, "visits": 0, "q": null}], "selected": 0, "chosen": 0, "nn_value": 0.0, "root_value": 0.0, "simulations": 16}, {"render": {"kind": "countdown", "target": 70, "numbers": [3, 4, 75], "history": ["2 + 1 = 3"], "use_all": false}, "text": "Target: 70. Numbers: 3, 4, 75.", "actions": [{"text": "4 + 3 = 7 (gap 5)", "prior": 0.1, "policy": 0.0, "visits": 4, "q": -0.75}, {"text": "4 - 3 = 1 (gap 5)", "prior": 0.1, "policy": 0.0, "visits": 4, "q": -0.75}, {"text": "4 * 3 = 12 (gap 5)", "prior": 0.1, "policy": 0.0, "visits": 2, "q": -0.5}, {"text": "75 + 3 = 78 (gap 8)", "prior": 0.1, "policy": 0.0, "visits": 2, "q": -0.5}, {"text": "75 - 3 = 72 (gap 2)", "prior": 0.1, "policy": 0.25, "visits": 1, "q": 0.0}, {"text": "75 * 3 = 225 (gap 66)", "prior": 0.1, "policy": 0.25, "visits": 1, "q": 0.0}, {"text": "75 / 3 = 25 (gap 45)", "prior": 0.1, "policy": 0.25, "visits": 1, "q": 0.0}, {"text": "75 + 4 = 79 (gap 9)", "prior": 0.1, "policy": 0.25, "visits": 1, "q": 0.0}, {"text": "75 - 4 = 71 (gap 1)", "prior": 0.1, "policy": 0.0001, "visits": 0, "q": null}, {"text": "75 * 4 = 300 (gap 67)", "prior": 0.1, "policy": 0.0001, "visits": 0, "q": null}], "selected": 0, "chosen": 0, "nn_value": 0.0, "root_value": -0.0001, "simulations": 16}, {"render": {"kind": "countdown", "target": 70, "numbers": [7, 75], "history": ["2 + 1 = 3", "4 + 3 = 7"], "use_all": false}, "text": "Target: 70. Numbers: 7, 75.", "actions": [{"text": "75 + 7 = 82 (gap 12)", "prior": 0.3333, "policy": 0.3333, "visits": 8, "q": -1.0}, {"text": "75 - 7 = 68 (gap 2)", "prior": 0.3333, "policy": 0.3333, "visits": 6, "q": -1.0}, {"text": "75 * 7 = 525 (gap 455)", "prior": 0.3333, "policy": 0.3333, "visits": 2, "q": -1.0}], "selected": 0, "chosen": 0, "nn_value": 0.0, "root_value": -1.0, "simulations": 16}], "final": {"render": {"kind": "countdown", "target": 70, "numbers": [82], "history": ["2 + 1 = 3", "4 + 3 = 7", "75 + 7 = 82"], "use_all": false}, "text": "Target: 70. Numbers: 82."}, "outcome": {"success": false, "reward": 0.0, "moves": 3}}, "rollout-puct16": {"steps": [{"render": {"kind": "countdown", "target": 70, "numbers": [1, 2, 4, 75], "history": [], "use_all": false}, "text": "Target: 70. Numbers: 1, 2, 4, 75.", "actions": [{"text": "2 + 1 = 3 (gap 5)", "prior": 0.0625, "policy": 0.0625, "visits": 1, "q": -1.0}, {"text": "2 - 1 = 1 (gap 5)", "prior": 0.0625, "policy": 0.0625, "visits": 1, "q": -1.0}, {"text": "4 + 1 = 5 (gap 5)", "prior": 0.0625, "policy": 0.0625, "visits": 1, "q": -1.0}, {"text": "4 - 1 = 3 (gap 5)", "prior": 0.0625, "policy": 0.0625, "visits": 1, "q": -1.0}, {"text": "75 + 1 = 76 (gap 6)", "prior": 0.0625, "policy": 0.3125, "visits": 5, "q": -0.6}, {"text": "75 - 1 = 74 (gap 4)", "prior": 0.0625, "policy": 0.0625, "visits": 1, "q": -1.0}, {"text": "4 + 2 = 6 (gap 5)", "prior": 0.0625, "policy": 0.0625, "visits": 1, "q": -1.0}, {"text": "4 - 2 = 2 (gap 5)", "prior": 0.0625, "policy": 0.0625, "visits": 1, "q": -1.0}, {"text": "4 * 2 = 8 (gap 5)", "prior": 0.0625, "policy": 0.0625, "visits": 1, "q": -1.0}, {"text": "4 / 2 = 2 (gap 5)", "prior": 0.0625, "policy": 0.0625, "visits": 1, "q": -1.0}, {"text": "75 + 2 = 77 (gap 7)", "prior": 0.0625, "policy": 0.0625, "visits": 1, "q": -1.0}, {"text": "75 - 2 = 73 (gap 3)", "prior": 0.0625, "policy": 0.0625, "visits": 1, "q": -1.0}, {"text": "75 * 2 = 150 (gap 66)", "prior": 0.0625, "policy": 0.0, "visits": 0, "q": null}, {"text": "75 + 4 = 79 (gap 9)", "prior": 0.0625, "policy": 0.0, "visits": 0, "q": null}, {"text": "75 - 4 = 71 (gap 1)", "prior": 0.0625, "policy": 0.0, "visits": 0, "q": null}, {"text": "75 * 4 = 300 (gap 68)", "prior": 0.0625, "policy": 0.0, "visits": 0, "q": null}], "selected": 4, "chosen": 4, "nn_value": -1.0, "root_value": -0.8824, "simulations": 16}, {"render": {"kind": "countdown", "target": 70, "numbers": [2, 4, 76], "history": ["75 + 1 = 76"], "use_all": false}, "text": "Target: 70. Numbers: 2, 4, 76.", "actions": [{"text": "4 + 2 = 6 (gap 6)", "prior": 0.0833, "policy": 0.5625, "visits": 9, "q": 0.5556}, {"text": "4 - 2 = 2 (gap 6)", "prior": 0.0833, "policy": 0.0625, "visits": 1, "q": -1.0}, {"text": "4 * 2 = 8 (gap 6)", "prior": 0.0833, "policy": 0.0625, "visits": 1, "q": -1.0}, {"text": "4 / 2 = 2 (gap 6)", "prior": 0.0833, "policy": 0.0625, "visits": 1, "q": -1.0}, {"text": "76 + 2 = 78 (gap 8)", "prior": 0.0833, "policy": 0.0625, "visits": 1, "q": -1.0}, {"text": "76 - 2 = 74 (gap 4)", "prior": 0.0833, "policy": 0.0625, "visits": 1, "q": -1.0}, {"text": "76 * 2 = 152 (gap 66)", "prior": 0.0833, "policy": 0.0625, "visits": 1, "q": -1.0}, {"text": "76 / 2 = 38 (gap 32)", "prior": 0.0833, "policy": 0.0625, "visits": 1, "q": -1.0}, {"text": "76 + 4 = 80 (gap 10)", "prior": 0.0833, "policy": 0.0, "visits": 0, "q": null}, {"text": "76 - 4 = 72 (gap 2)", "prior": 0.0833, "policy": 0.0, "visits": 0, "q": null}, {"text": "76 * 4 = 304 (gap 68)", "prior": 0.0833, "policy": 0.0, "visits": 0, "q": null}, {"text": "76 / 4 = 19 (gap 51)", "prior": 0.0833, "policy": 0.0, "visits": 0, "q": null}], "selected": 0, "chosen": 0, "nn_value": 1.0, "root_value": -0.0588, "simulations": 16}, {"render": {"kind": "countdown", "target": 70, "numbers": [6, 76], "history": ["75 + 1 = 76", "4 + 2 = 6"], "use_all": false}, "text": "Target: 70. Numbers: 6, 76.", "actions": [{"text": "76 + 6 = 82 (gap 12)", "prior": 0.3333, "policy": 0.0625, "visits": 1, "q": -1.0}, {"text": "76 - 6 = 70 (gap 0)", "prior": 0.3333, "policy": 0.875, "visits": 14, "q": 1.0}, {"text": "76 * 6 = 456 (gap 386)", "prior": 0.3333, "policy": 0.0625, "visits": 1, "q": -1.0}], "selected": 1, "chosen": 1, "nn_value": -1.0, "root_value": 0.6471, "simulations": 16}], "final": {"render": {"kind": "countdown", "target": 70, "numbers": [70], "history": ["75 + 1 = 76", "4 + 2 = 6", "76 - 6 = 70"], "use_all": false}, "text": "Target: 70. Numbers: 70."}, "outcome": {"success": true, "reward": 1.0, "moves": 3}}, "teacher": {"steps": [{"render": {"kind": "countdown", "target": 70, "numbers": [1, 2, 4, 75], "history": [], "use_all": false}, "text": "Target: 70. Numbers: 1, 2, 4, 75.", "actions": [{"text": "2 + 1 = 3 (gap 5)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "2 - 1 = 1 (gap 5)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "4 + 1 = 5 (gap 5)", "prior": 0.3333, "policy": 0.3333, "visits": 0, "q": 0.0}, {"text": "4 - 1 = 3 (gap 5)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "75 + 1 = 76 (gap 6)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "75 - 1 = 74 (gap 4)", "prior": 0.3333, "policy": 0.3333, "visits": 0, "q": 0.0}, {"text": "4 + 2 = 6 (gap 5)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "4 - 2 = 2 (gap 5)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "4 * 2 = 8 (gap 5)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "4 / 2 = 2 (gap 5)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "75 + 2 = 77 (gap 7)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "75 - 2 = 73 (gap 3)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "75 * 2 = 150 (gap 66)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "75 + 4 = 79 (gap 9)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "75 - 4 = 71 (gap 1)", "prior": 0.3333, "policy": 0.3333, "visits": 0, "q": 0.0}, {"text": "75 * 4 = 300 (gap 68)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}], "selected": 2, "chosen": 2, "nn_value": null, "root_value": 1.0, "simulations": 0}, {"render": {"kind": "countdown", "target": 70, "numbers": [2, 5, 75], "history": ["4 + 1 = 5"], "use_all": false}, "text": "Target: 70. Numbers: 2, 5, 75.", "actions": [{"text": "5 + 2 = 7 (gap 5)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "5 - 2 = 3 (gap 5)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "5 * 2 = 10 (gap 5)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "75 + 2 = 77 (gap 7)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "75 - 2 = 73 (gap 3)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "75 * 2 = 150 (gap 65)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "75 + 5 = 80 (gap 10)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "75 - 5 = 70 (gap 0)", "prior": 1.0, "policy": 1.0, "visits": 0, "q": 0.0}, {"text": "75 * 5 = 375 (gap 68)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "75 / 5 = 15 (gap 55)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}], "selected": 7, "chosen": 7, "nn_value": null, "root_value": 1.0, "simulations": 0}], "final": {"render": {"kind": "countdown", "target": 70, "numbers": [2, 70], "history": ["4 + 1 = 5", "75 - 5 = 70"], "use_all": false}, "text": "Target: 70. Numbers: 2, 70."}, "outcome": {"success": true, "reward": 1.0, "moves": 2}}}, "p2": {"greedy": {"steps": [{"render": {"kind": "countdown", "target": 23, "numbers": [3, 4, 6, 9], "history": [], "use_all": false}, "text": "Target: 23. Numbers: 3, 4, 6, 9.", "actions": [{"text": "4 + 3 = 7 (gap 14)", "prior": 0.0307, "policy": 0.0307, "visits": 0, "q": null}, {"text": "4 - 3 = 1 (gap 14)", "prior": 0.0603, "policy": 0.0603, "visits": 0, "q": null}, {"text": "4 * 3 = 12 (gap 11)", "prior": 0.0272, "policy": 0.0272, "visits": 0, "q": null}, {"text": "6 + 3 = 9 (gap 14)", "prior": 0.0317, "policy": 0.0317, "visits": 0, "q": null}, {"text": "6 - 3 = 3 (gap 14)", "prior": 0.0302, "policy": 0.0302, "visits": 0, "q": null}, {"text": "6 * 3 = 18 (gap 5)", "prior": 0.0445, "policy": 0.0445, "visits": 0, "q": null}, {"text": "6 / 3 = 2 (gap 14)", "prior": 0.0295, "policy": 0.0295, "visits": 0, "q": null}, {"text": "9 + 3 = 12 (gap 11)", "prior": 0.0247, "policy": 0.0247, "visits": 0, "q": null}, {"text": "9 - 3 = 6 (gap 17)", "prior": 0.0498, "policy": 0.0498, "visits": 0, "q": null}, {"text": "9 * 3 = 27 (gap 4)", "prior": 0.1895, "policy": 0.1895, "visits": 0, "q": null}, {"text": "9 / 3 = 3 (gap 17)", "prior": 0.0302, "policy": 0.0302, "visits": 0, "q": null}, {"text": "6 + 4 = 10 (gap 13)", "prior": 0.0973, "policy": 0.0973, "visits": 0, "q": null}, {"text": "6 - 4 = 2 (gap 14)", "prior": 0.0297, "policy": 0.0297, "visits": 0, "q": null}, {"text": "6 * 4 = 24 (gap 1)", "prior": 0.0468, "policy": 0.0468, "visits": 0, "q": null}, {"text": "9 + 4 = 13 (gap 10)", "prior": 0.0981, "policy": 0.0981, "visits": 0, "q": null}, {"text": "9 - 4 = 5 (gap 17)", "prior": 0.0726, "policy": 0.0726, "visits": 0, "q": null}, {"text": "9 * 4 = 36 (gap 13)", "prior": 0.0262, "policy": 0.0262, "visits": 0, "q": null}, {"text": "9 + 6 = 15 (gap 8)", "prior": 0.0285, "policy": 0.0285, "visits": 0, "q": null}, {"text": "9 - 6 = 3 (gap 19)", "prior": 0.0288, "policy": 0.0288, "visits": 0, "q": null}, {"text": "9 * 6 = 54 (gap 19)", "prior": 0.0238, "policy": 0.0238, "visits": 0, "q": null}], "selected": 9, "chosen": 9, "nn_value": 0.6658, "root_value": 0.6658, "simulations": 0}, {"render": {"kind": "countdown", "target": 23, "numbers": [4, 6, 27], "history": ["9 * 3 = 27"], "use_all": false}, "text": "Target: 23. Numbers: 4, 6, 27.", "actions": [{"text": "6 + 4 = 10 (gap 4)", "prior": 0.0226, "policy": 0.0226, "visits": 0, "q": null}, {"text": "6 - 4 = 2 (gap 4)", "prior": 0.0155, "policy": 0.0155, "visits": 0, "q": null}, {"text": "6 * 4 = 24 (gap 1)", "prior": 0.0052, "policy": 0.0052, "visits": 0, "q": null}, {"text": "27 + 4 = 31 (gap 8)", "prior": 0.003, "policy": 0.003, "visits": 0, "q": null}, {"text": "27 - 4 = 23 (gap 0)", "prior": 0.941, "policy": 0.941, "visits": 0, "q": null}, {"text": "27 * 4 = 108 (gap 17)", "prior": 0.0029, "policy": 0.0029, "visits": 0, "q": null}, {"text": "27 + 6 = 33 (gap 10)", "prior": 0.0027, "policy": 0.0027, "visits": 0, "q": null}, {"text": "27 - 6 = 21 (gap 2)", "prior": 0.0044, "policy": 0.0044, "visits": 0, "q": null}, {"text": "27 * 6 = 162 (gap 19)", "prior": 0.0027, "policy": 0.0027, "visits": 0, "q": null}], "selected": 4, "chosen": 4, "nn_value": 0.5803, "root_value": 0.5803, "simulations": 0}], "final": {"render": {"kind": "countdown", "target": 23, "numbers": [6, 23], "history": ["9 * 3 = 27", "27 - 4 = 23"], "use_all": false}, "text": "Target: 23. Numbers: 6, 23."}, "outcome": {"success": true, "reward": 1.0, "moves": 2}}, "puct16": {"steps": [{"render": {"kind": "countdown", "target": 23, "numbers": [3, 4, 6, 9], "history": [], "use_all": false}, "text": "Target: 23. Numbers: 3, 4, 6, 9.", "actions": [{"text": "4 + 3 = 7 (gap 14)", "prior": 0.0307, "policy": 0.0, "visits": 0, "q": null}, {"text": "4 - 3 = 1 (gap 14)", "prior": 0.0603, "policy": 0.0625, "visits": 1, "q": 0.5711}, {"text": "4 * 3 = 12 (gap 11)", "prior": 0.0272, "policy": 0.0, "visits": 0, "q": null}, {"text": "6 + 3 = 9 (gap 14)", "prior": 0.0317, "policy": 0.0, "visits": 0, "q": null}, {"text": "6 - 3 = 3 (gap 14)", "prior": 0.0302, "policy": 0.0, "visits": 0, "q": null}, {"text": "6 * 3 = 18 (gap 5)", "prior": 0.0445, "policy": 0.0625, "visits": 1, "q": 0.6096}, {"text": "6 / 3 = 2 (gap 14)", "prior": 0.0295, "policy": 0.0, "visits": 0, "q": null}, {"text": "9 + 3 = 12 (gap 11)", "prior": 0.0247, "policy": 0.0, "visits": 0, "q": null}, {"text": "9 - 3 = 6 (gap 17)", "prior": 0.0498, "policy": 0.0625, "visits": 1, "q": 0.5537}, {"text": "9 * 3 = 27 (gap 4)", "prior": 0.1895, "policy": 0.5625, "visits": 9, "q": 0.9534}, {"text": "9 / 3 = 3 (gap 17)", "prior": 0.0302, "policy": 0.0, "visits": 0, "q": null}, {"text": "6 + 4 = 10 (gap 13)", "prior": 0.0973, "policy": 0.0625, "visits": 1, "q": 0.6176}, {"text": "6 - 4 = 2 (gap 14)", "prior": 0.0297, "policy": 0.0, "visits": 0, "q": null}, {"text": "6 * 4 = 24 (gap 1)", "prior": 0.0468, "policy": 0.0625, "visits": 1, "q": 0.5974}, {"text": "9 + 4 = 13 (gap 10)", "prior": 0.0981, "policy": 0.0625, "visits": 1, "q": 0.6185}, {"text": "9 - 4 = 5 (gap 17)", "prior": 0.0726, "policy": 0.0625, "visits": 1, "q": 0.5866}, {"text": "9 * 4 = 36 (gap 13)", "prior": 0.0262, "policy": 0.0, "visits": 0, "q": null}, {"text": "9 + 6 = 15 (gap 8)", "prior": 0.0285, "policy": 0.0, "visits": 0, "q": null}, {"text": "9 - 6 = 3 (gap 19)", "prior": 0.0288, "policy": 0.0, "visits": 0, "q": null}, {"text": "9 * 6 = 54 (gap 19)", "prior": 0.0238, "policy": 0.0, "visits": 0, "q": null}], "selected": 9, "chosen": 9, "nn_value": 0.6658, "root_value": 0.7883, "simulations": 16, "tree": {"a": null, "p": 1.0, "n": 17, "q": 0.7883, "children": [{"a": "9 * 3 = 27 (gap 4)", "p": 0.1895, "n": 9, "q": 0.9534, "children": [{"a": "27 - 4 = 23 (gap 0)", "p": 0.941, "n": 8, "q": 1.0, "children": [], "t": true, "tv": 1.0, "ok": true, "s": "Target: 23. Numbers: 6, 23.", "hidden": 0}], "v": 0.5803, "s": "Target: 23. Numbers: 4, 6, 27.", "hidden": 0}, {"a": "4 - 3 = 1 (gap 14)", "p": 0.0603, "n": 1, "q": 0.5711, "children": [], "v": 0.5711, "hidden": 0}, {"a": "6 * 3 = 18 (gap 5)", "p": 0.0445, "n": 1, "q": 0.6096, "children": [], "v": 0.6096, "hidden": 0}, {"a": "9 - 3 = 6 (gap 17)", "p": 0.0498, "n": 1, "q": 0.5537, "children": [], "v": 0.5537, "hidden": 0}, {"a": "6 + 4 = 10 (gap 13)", "p": 0.0973, "n": 1, "q": 0.6176, "children": [], "v": 0.6176, "hidden": 0}, {"a": "6 * 4 = 24 (gap 1)", "p": 0.0468, "n": 1, "q": 0.5974, "children": [], "v": 0.5974, "hidden": 0}, {"a": "9 + 4 = 13 (gap 10)", "p": 0.0981, "n": 1, "q": 0.6185, "children": [], "v": 0.6185, "hidden": 0}, {"a": "9 - 4 = 5 (gap 17)", "p": 0.0726, "n": 1, "q": 0.5866, "children": [], "v": 0.5866, "hidden": 0}], "v": 0.6658, "s": "Target: 23. Numbers: 3, 4, 6, 9.", "hidden": 0, "size": 10}}, {"render": {"kind": "countdown", "target": 23, "numbers": [4, 6, 27], "history": ["9 * 3 = 27"], "use_all": false}, "text": "Target: 23. Numbers: 4, 6, 27.", "actions": [{"text": "6 + 4 = 10 (gap 4)", "prior": 0.0226, "policy": 0.0, "visits": 0, "q": null}, {"text": "6 - 4 = 2 (gap 4)", "prior": 0.0155, "policy": 0.0, "visits": 0, "q": null}, {"text": "6 * 4 = 24 (gap 1)", "prior": 0.0052, "policy": 0.0, "visits": 0, "q": null}, {"text": "27 + 4 = 31 (gap 8)", "prior": 0.003, "policy": 0.0, "visits": 0, "q": null}, {"text": "27 - 4 = 23 (gap 0)", "prior": 0.941, "policy": 1.0, "visits": 16, "q": 1.0}, {"text": "27 * 4 = 108 (gap 17)", "prior": 0.0029, "policy": 0.0, "visits": 0, "q": null}, {"text": "27 + 6 = 33 (gap 10)", "prior": 0.0027, "policy": 0.0, "visits": 0, "q": null}, {"text": "27 - 6 = 21 (gap 2)", "prior": 0.0044, "policy": 0.0, "visits": 0, "q": null}, {"text": "27 * 6 = 162 (gap 19)", "prior": 0.0027, "policy": 0.0, "visits": 0, "q": null}], "selected": 4, "chosen": 4, "nn_value": 0.5803, "root_value": 0.9753, "simulations": 16, "tree": {"a": null, "p": 1.0, "n": 17, "q": 0.9753, "children": [{"a": "27 - 4 = 23 (gap 0)", "p": 0.941, "n": 16, "q": 1.0, "children": [], "t": true, "tv": 1.0, "ok": true, "s": "Target: 23. Numbers: 6, 23.", "hidden": 0}], "v": 0.5803, "s": "Target: 23. Numbers: 4, 6, 27.", "hidden": 0, "size": 2}}], "final": {"render": {"kind": "countdown", "target": 23, "numbers": [6, 23], "history": ["9 * 3 = 27", "27 - 4 = 23"], "use_all": false}, "text": "Target: 23. Numbers: 6, 23."}, "outcome": {"success": true, "reward": 1.0, "moves": 2}}, "uniform-puct16": {"steps": [{"render": {"kind": "countdown", "target": 23, "numbers": [3, 4, 6, 9], "history": [], "use_all": false}, "text": "Target: 23. Numbers: 3, 4, 6, 9.", "actions": [{"text": "4 + 3 = 7 (gap 14)", "prior": 0.05, "policy": 0.0625, "visits": 1, "q": 0.0}, {"text": "4 - 3 = 1 (gap 14)", "prior": 0.05, "policy": 0.0625, "visits": 1, "q": 0.0}, {"text": "4 * 3 = 12 (gap 11)", "prior": 0.05, "policy": 0.0625, "visits": 1, "q": 0.0}, {"text": "6 + 3 = 9 (gap 14)", "prior": 0.05, "policy": 0.0625, "visits": 1, "q": 0.0}, {"text": "6 - 3 = 3 (gap 14)", "prior": 0.05, "policy": 0.0625, "visits": 1, "q": 0.0}, {"text": "6 * 3 = 18 (gap 5)", "prior": 0.05, "policy": 0.0625, "visits": 1, "q": 0.0}, {"text": "6 / 3 = 2 (gap 14)", "prior": 0.05, "policy": 0.0625, "visits": 1, "q": 0.0}, {"text": "9 + 3 = 12 (gap 11)", "prior": 0.05, "policy": 0.0625, "visits": 1, "q": 0.0}, {"text": "9 - 3 = 6 (gap 17)", "prior": 0.05, "policy": 0.0625, "visits": 1, "q": 0.0}, {"text": "9 * 3 = 27 (gap 4)", "prior": 0.05, "policy": 0.0625, "visits": 1, "q": 0.0}, {"text": "9 / 3 = 3 (gap 17)", "prior": 0.05, "policy": 0.0625, "visits": 1, "q": 0.0}, {"text": "6 + 4 = 10 (gap 13)", "prior": 0.05, "policy": 0.0625, "visits": 1, "q": 0.0}, {"text": "6 - 4 = 2 (gap 14)", "prior": 0.05, "policy": 0.0625, "visits": 1, "q": 0.0}, {"text": "6 * 4 = 24 (gap 1)", "prior": 0.05, "policy": 0.0625, "visits": 1, "q": 0.0}, {"text": "9 + 4 = 13 (gap 10)", "prior": 0.05, "policy": 0.0625, "visits": 1, "q": 0.0}, {"text": "9 - 4 = 5 (gap 17)", "prior": 0.05, "policy": 0.0625, "visits": 1, "q": 0.0}, {"text": "9 * 4 = 36 (gap 13)", "prior": 0.05, "policy": 0.0, "visits": 0, "q": null}, {"text": "9 + 6 = 15 (gap 8)", "prior": 0.05, "policy": 0.0, "visits": 0, "q": null}, {"text": "9 - 6 = 3 (gap 19)", "prior": 0.05, "policy": 0.0, "visits": 0, "q": null}, {"text": "9 * 6 = 54 (gap 19)", "prior": 0.05, "policy": 0.0, "visits": 0, "q": null}], "selected": 0, "chosen": 0, "nn_value": 0.0, "root_value": 0.0, "simulations": 16}, {"render": {"kind": "countdown", "target": 23, "numbers": [6, 7, 9], "history": ["4 + 3 = 7"], "use_all": false}, "text": "Target: 23. Numbers: 6, 7, 9.", "actions": [{"text": "7 + 6 = 13 (gap 10)", "prior": 0.1111, "policy": 0.125, "visits": 2, "q": -0.5}, {"text": "7 - 6 = 1 (gap 14)", "prior": 0.1111, "policy": 0.125, "visits": 2, "q": -0.5}, {"text": "7 * 6 = 42 (gap 14)", "prior": 0.1111, "policy": 0.125, "visits": 2, "q": -0.5}, {"text": "9 + 6 = 15 (gap 8)", "prior": 0.1111, "policy": 0.125, "visits": 2, "q": -0.5}, {"text": "9 - 6 = 3 (gap 16)", "prior": 0.1111, "policy": 0.125, "visits": 2, "q": -0.5}, {"text": "9 * 6 = 54 (gap 16)", "prior": 0.1111, "policy": 0.125, "visits": 2, "q": -0.5}, {"text": "9 + 7 = 16 (gap 7)", "prior": 0.1111, "policy": 0.125, "visits": 2, "q": -0.5}, {"text": "9 - 7 = 2 (gap 17)", "prior": 0.1111, "policy": 0.0625, "visits": 1, "q": 0.0}, {"text": "9 * 7 = 63 (gap 17)", "prior": 0.1111, "policy": 0.0625, "visits": 1, "q": 0.0}], "selected": 0, "chosen": 0, "nn_value": 0.0, "root_value": -0.4118, "simulations": 16}, {"render": {"kind": "countdown", "target": 23, "numbers": [9, 13], "history": ["4 + 3 = 7", "7 + 6 = 13"], "use_all": false}, "text": "Target: 23. Numbers: 9, 13.", "actions": [{"text": "13 + 9 = 22 (gap 1)", "prior": 0.3333, "policy": 0.375, "visits": 6, "q": -1.0}, {"text": "13 - 9 = 4 (gap 19)", "prior": 0.3333, "policy": 0.3125, "visits": 5, "q": -1.0}, {"text": "13 * 9 = 117 (gap 94)", "prior": 0.3333, "policy": 0.3125, "visits": 5, "q": -1.0}], "selected": 0, "chosen": 0, "nn_value": 0.0, "root_value": -0.9412, "simulations": 16}], "final": {"render": {"kind": "countdown", "target": 23, "numbers": [22], "history": ["4 + 3 = 7", "7 + 6 = 13", "13 + 9 = 22"], "use_all": false}, "text": "Target: 23. Numbers: 22."}, "outcome": {"success": false, "reward": 0.0, "moves": 3}}, "uniform-gumbel16": {"steps": [{"render": {"kind": "countdown", "target": 23, "numbers": [3, 4, 6, 9], "history": [], "use_all": false}, "text": "Target: 23. Numbers: 3, 4, 6, 9.", "actions": [{"text": "4 + 3 = 7 (gap 14)", "prior": 0.05, "policy": 0.05, "visits": 4, "q": 0.0}, {"text": "4 - 3 = 1 (gap 14)", "prior": 0.05, "policy": 0.05, "visits": 4, "q": 0.0}, {"text": "4 * 3 = 12 (gap 11)", "prior": 0.05, "policy": 0.05, "visits": 2, "q": 0.0}, {"text": "6 + 3 = 9 (gap 14)", "prior": 0.05, "policy": 0.05, "visits": 2, "q": 0.0}, {"text": "6 - 3 = 3 (gap 14)", "prior": 0.05, "policy": 0.05, "visits": 1, "q": 0.0}, {"text": "6 * 3 = 18 (gap 5)", "prior": 0.05, "policy": 0.05, "visits": 1, "q": 0.0}, {"text": "6 / 3 = 2 (gap 14)", "prior": 0.05, "policy": 0.05, "visits": 1, "q": 0.0}, {"text": "9 + 3 = 12 (gap 11)", "prior": 0.05, "policy": 0.05, "visits": 1, "q": 0.0}, {"text": "9 - 3 = 6 (gap 17)", "prior": 0.05, "policy": 0.05, "visits": 0, "q": null}, {"text": "9 * 3 = 27 (gap 4)", "prior": 0.05, "policy": 0.05, "visits": 0, "q": null}, {"text": "9 / 3 = 3 (gap 17)", "prior": 0.05, "policy": 0.05, "visits": 0, "q": null}, {"text": "6 + 4 = 10 (gap 13)", "prior": 0.05, "policy": 0.05, "visits": 0, "q": null}, {"text": "6 - 4 = 2 (gap 14)", "prior": 0.05, "policy": 0.05, "visits": 0, "q": null}, {"text": "6 * 4 = 24 (gap 1)", "prior": 0.05, "policy": 0.05, "visits": 0, "q": null}, {"text": "9 + 4 = 13 (gap 10)", "prior": 0.05, "policy": 0.05, "visits": 0, "q": null}, {"text": "9 - 4 = 5 (gap 17)", "prior": 0.05, "policy": 0.05, "visits": 0, "q": null}, {"text": "9 * 4 = 36 (gap 13)", "prior": 0.05, "policy": 0.05, "visits": 0, "q": null}, {"text": "9 + 6 = 15 (gap 8)", "prior": 0.05, "policy": 0.05, "visits": 0, "q": null}, {"text": "9 - 6 = 3 (gap 19)", "prior": 0.05, "policy": 0.05, "visits": 0, "q": null}, {"text": "9 * 6 = 54 (gap 19)", "prior": 0.05, "policy": 0.05, "visits": 0, "q": null}], "selected": 0, "chosen": 0, "nn_value": 0.0, "root_value": 0.0, "simulations": 16}, {"render": {"kind": "countdown", "target": 23, "numbers": [6, 7, 9], "history": ["4 + 3 = 7"], "use_all": false}, "text": "Target: 23. Numbers: 6, 7, 9.", "actions": [{"text": "7 + 6 = 13 (gap 10)", "prior": 0.1111, "policy": 0.0, "visits": 4, "q": -0.75}, {"text": "7 - 6 = 1 (gap 14)", "prior": 0.1111, "policy": 0.0, "visits": 4, "q": -0.75}, {"text": "7 * 6 = 42 (gap 14)", "prior": 0.1111, "policy": 0.0, "visits": 2, "q": -0.5}, {"text": "9 + 6 = 15 (gap 8)", "prior": 0.1111, "policy": 0.0, "visits": 2, "q": -0.5}, {"text": "9 - 6 = 3 (gap 16)", "prior": 0.1111, "policy": 0.25, "visits": 1, "q": 0.0}, {"text": "9 * 6 = 54 (gap 16)", "prior": 0.1111, "policy": 0.25, "visits": 1, "q": 0.0}, {"text": "9 + 7 = 16 (gap 7)", "prior": 0.1111, "policy": 0.25, "visits": 1, "q": 0.0}, {"text": "9 - 7 = 2 (gap 17)", "prior": 0.1111, "policy": 0.25, "visits": 1, "q": 0.0}, {"text": "9 * 7 = 63 (gap 17)", "prior": 0.1111, "policy": 0.0001, "visits": 0, "q": null}], "selected": 0, "chosen": 0, "nn_value": 0.0, "root_value": -0.0, "simulations": 16}, {"render": {"kind": "countdown", "target": 23, "numbers": [9, 13], "history": ["4 + 3 = 7", "7 + 6 = 13"], "use_all": false}, "text": "Target: 23. Numbers: 9, 13.", "actions": [{"text": "13 + 9 = 22 (gap 1)", "prior": 0.3333, "policy": 0.3333, "visits": 8, "q": -1.0}, {"text": "13 - 9 = 4 (gap 19)", "prior": 0.3333, "policy": 0.3333, "visits": 6, "q": -1.0}, {"text": "13 * 9 = 117 (gap 94)", "prior": 0.3333, "policy": 0.3333, "visits": 2, "q": -1.0}], "selected": 0, "chosen": 0, "nn_value": 0.0, "root_value": -1.0, "simulations": 16}], "final": {"render": {"kind": "countdown", "target": 23, "numbers": [22], "history": ["4 + 3 = 7", "7 + 6 = 13", "13 + 9 = 22"], "use_all": false}, "text": "Target: 23. Numbers: 22."}, "outcome": {"success": false, "reward": 0.0, "moves": 3}}, "rollout-puct16": {"steps": [{"render": {"kind": "countdown", "target": 23, "numbers": [3, 4, 6, 9], "history": [], "use_all": false}, "text": "Target: 23. Numbers: 3, 4, 6, 9.", "actions": [{"text": "4 + 3 = 7 (gap 14)", "prior": 0.05, "policy": 0.0625, "visits": 1, "q": -1.0}, {"text": "4 - 3 = 1 (gap 14)", "prior": 0.05, "policy": 0.0625, "visits": 1, "q": -1.0}, {"text": "4 * 3 = 12 (gap 11)", "prior": 0.05, "policy": 0.0625, "visits": 1, "q": -1.0}, {"text": "6 + 3 = 9 (gap 14)", "prior": 0.05, "policy": 0.0625, "visits": 1, "q": -1.0}, {"text": "6 - 3 = 3 (gap 14)", "prior": 0.05, "policy": 0.0625, "visits": 1, "q": -1.0}, {"text": "6 * 3 = 18 (gap 5)", "prior": 0.05, "policy": 0.3125, "visits": 5, "q": -0.6}, {"text": "6 / 3 = 2 (gap 14)", "prior": 0.05, "policy": 0.0625, "visits": 1, "q": -1.0}, {"text": "9 + 3 = 12 (gap 11)", "prior": 0.05, "policy": 0.0625, "visits": 1, "q": -1.0}, {"text": "9 - 3 = 6 (gap 17)", "prior": 0.05, "policy": 0.0625, "visits": 1, "q": -1.0}, {"text": "9 * 3 = 27 (gap 4)", "prior": 0.05, "policy": 0.0625, "visits": 1, "q": -1.0}, {"text": "9 / 3 = 3 (gap 17)", "prior": 0.05, "policy": 0.0625, "visits": 1, "q": -1.0}, {"text": "6 + 4 = 10 (gap 13)", "prior": 0.05, "policy": 0.0625, "visits": 1, "q": -1.0}, {"text": "6 - 4 = 2 (gap 14)", "prior": 0.05, "policy": 0.0, "visits": 0, "q": null}, {"text": "6 * 4 = 24 (gap 1)", "prior": 0.05, "policy": 0.0, "visits": 0, "q": null}, {"text": "9 + 4 = 13 (gap 10)", "prior": 0.05, "policy": 0.0, "visits": 0, "q": null}, {"text": "9 - 4 = 5 (gap 17)", "prior": 0.05, "policy": 0.0, "visits": 0, "q": null}, {"text": "9 * 4 = 36 (gap 13)", "prior": 0.05, "policy": 0.0, "visits": 0, "q": null}, {"text": "9 + 6 = 15 (gap 8)", "prior": 0.05, "policy": 0.0, "visits": 0, "q": null}, {"text": "9 - 6 = 3 (gap 19)", "prior": 0.05, "policy": 0.0, "visits": 0, "q": null}, {"text": "9 * 6 = 54 (gap 19)", "prior": 0.05, "policy": 0.0, "visits": 0, "q": null}], "selected": 5, "chosen": 5, "nn_value": -1.0, "root_value": -0.8824, "simulations": 16}, {"render": {"kind": "countdown", "target": 23, "numbers": [4, 9, 18], "history": ["6 * 3 = 18"], "use_all": false}, "text": "Target: 23. Numbers: 4, 9, 18.", "actions": [{"text": "9 + 4 = 13 (gap 5)", "prior": 0.1, "policy": 0.125, "visits": 2, "q": -1.0}, {"text": "9 - 4 = 5 (gap 5)", "prior": 0.1, "policy": 0.375, "visits": 6, "q": 0.3333}, {"text": "9 * 4 = 36 (gap 5)", "prior": 0.1, "policy": 0.0625, "visits": 1, "q": -1.0}, {"text": "18 + 4 = 22 (gap 1)", "prior": 0.1, "policy": 0.0625, "visits": 1, "q": -1.0}, {"text": "18 - 4 = 14 (gap 9)", "prior": 0.1, "policy": 0.0625, "visits": 1, "q": -1.0}, {"text": "18 * 4 = 72 (gap 14)", "prior": 0.1, "policy": 0.0625, "visits": 1, "q": -1.0}, {"text": "18 + 9 = 27 (gap 4)", "prior": 0.1, "policy": 0.0625, "visits": 1, "q": -1.0}, {"text": "18 - 9 = 9 (gap 14)", "prior": 0.1, "policy": 0.0625, "visits": 1, "q": -1.0}, {"text": "18 * 9 = 162 (gap 19)", "prior": 0.1, "policy": 0.0625, "visits": 1, "q": -1.0}, {"text": "18 / 9 = 2 (gap 19)", "prior": 0.1, "policy": 0.0625, "visits": 1, "q": -1.0}], "selected": 1, "chosen": 1, "nn_value": -1.0, "root_value": -0.5294, "simulations": 16}, {"render": {"kind": "countdown", "target": 23, "numbers": [5, 18], "history": ["6 * 3 = 18", "9 - 4 = 5"], "use_all": false}, "text": "Target: 23. Numbers: 5, 18.", "actions": [{"text": "18 + 5 = 23 (gap 0)", "prior": 0.3333, "policy": 0.875, "visits": 14, "q": 1.0}, {"text": "18 - 5 = 13 (gap 10)", "prior": 0.3333, "policy": 0.0625, "visits": 1, "q": -1.0}, {"text": "18 * 5 = 90 (gap 67)", "prior": 0.3333, "policy": 0.0625, "visits": 1, "q": -1.0}], "selected": 0, "chosen": 0, "nn_value": 1.0, "root_value": 0.7647, "simulations": 16}], "final": {"render": {"kind": "countdown", "target": 23, "numbers": [23], "history": ["6 * 3 = 18", "9 - 4 = 5", "18 + 5 = 23"], "use_all": false}, "text": "Target: 23. Numbers: 23."}, "outcome": {"success": true, "reward": 1.0, "moves": 3}}, "teacher": {"steps": [{"render": {"kind": "countdown", "target": 23, "numbers": [3, 4, 6, 9], "history": [], "use_all": false}, "text": "Target: 23. Numbers: 3, 4, 6, 9.", "actions": [{"text": "4 + 3 = 7 (gap 14)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "4 - 3 = 1 (gap 14)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "4 * 3 = 12 (gap 11)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "6 + 3 = 9 (gap 14)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "6 - 3 = 3 (gap 14)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "6 * 3 = 18 (gap 5)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "6 / 3 = 2 (gap 14)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "9 + 3 = 12 (gap 11)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "9 - 3 = 6 (gap 17)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "9 * 3 = 27 (gap 4)", "prior": 1.0, "policy": 1.0, "visits": 0, "q": 0.0}, {"text": "9 / 3 = 3 (gap 17)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "6 + 4 = 10 (gap 13)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "6 - 4 = 2 (gap 14)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "6 * 4 = 24 (gap 1)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "9 + 4 = 13 (gap 10)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "9 - 4 = 5 (gap 17)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "9 * 4 = 36 (gap 13)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "9 + 6 = 15 (gap 8)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "9 - 6 = 3 (gap 19)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "9 * 6 = 54 (gap 19)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}], "selected": 9, "chosen": 9, "nn_value": null, "root_value": 1.0, "simulations": 0}, {"render": {"kind": "countdown", "target": 23, "numbers": [4, 6, 27], "history": ["9 * 3 = 27"], "use_all": false}, "text": "Target: 23. Numbers: 4, 6, 27.", "actions": [{"text": "6 + 4 = 10 (gap 4)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "6 - 4 = 2 (gap 4)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "6 * 4 = 24 (gap 1)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "27 + 4 = 31 (gap 8)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "27 - 4 = 23 (gap 0)", "prior": 1.0, "policy": 1.0, "visits": 0, "q": 0.0}, {"text": "27 * 4 = 108 (gap 17)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "27 + 6 = 33 (gap 10)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "27 - 6 = 21 (gap 2)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "27 * 6 = 162 (gap 19)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}], "selected": 4, "chosen": 4, "nn_value": null, "root_value": 1.0, "simulations": 0}], "final": {"render": {"kind": "countdown", "target": 23, "numbers": [6, 23], "history": ["9 * 3 = 27", "27 - 4 = 23"], "use_all": false}, "text": "Target: 23. Numbers: 6, 23."}, "outcome": {"success": true, "reward": 1.0, "moves": 2}}}, "p3": {"greedy": {"steps": [{"render": {"kind": "countdown", "target": 65, "numbers": [9, 10, 25, 100], "history": [], "use_all": false}, "text": "Target: 65. Numbers: 9, 10, 25, 100.", "actions": [{"text": "10 + 9 = 19 (gap 35)", "prior": 0.0332, "policy": 0.0332, "visits": 0, "q": null}, {"text": "10 - 9 = 1 (gap 35)", "prior": 0.0342, "policy": 0.0342, "visits": 0, "q": null}, {"text": "10 * 9 = 90 (gap 25)", "prior": 0.0608, "policy": 0.0608, "visits": 0, "q": null}, {"text": "25 + 9 = 34 (gap 31)", "prior": 0.0349, "policy": 0.0349, "visits": 0, "q": null}, {"text": "25 - 9 = 16 (gap 35)", "prior": 0.0386, "policy": 0.0386, "visits": 0, "q": null}, {"text": "25 * 9 = 225 (gap 35)", "prior": 0.031, "policy": 0.031, "visits": 0, "q": null}, {"text": "100 + 9 = 109 (gap 40)", "prior": 0.0285, "policy": 0.0285, "visits": 0, "q": null}, {"text": "100 - 9 = 91 (gap 26)", "prior": 0.0292, "policy": 0.0292, "visits": 0, "q": null}, {"text": "100 * 9 = 900 (gap 40)", "prior": 0.0268, "policy": 0.0268, "visits": 0, "q": null}, {"text": "25 + 10 = 35 (gap 30)", "prior": 0.1351, "policy": 0.1351, "visits": 0, "q": null}, {"text": "25 - 10 = 15 (gap 35)", "prior": 0.0335, "policy": 0.0335, "visits": 0, "q": null}, {"text": "25 * 10 = 250 (gap 35)", "prior": 0.0285, "policy": 0.0285, "visits": 0, "q": null}, {"text": "100 + 10 = 110 (gap 40)", "prior": 0.0289, "policy": 0.0289, "visits": 0, "q": null}, {"text": "100 - 10 = 90 (gap 25)", "prior": 0.0834, "policy": 0.0834, "visits": 0, "q": null}, {"text": "100 * 10 = 1000 (gap 40)", "prior": 0.0277, "policy": 0.0277, "visits": 0, "q": null}, {"text": "100 / 10 = 10 (gap 40)", "prior": 0.0416, "policy": 0.0416, "visits": 0, "q": null}, {"text": "100 + 25 = 125 (gap 55)", "prior": 0.0344, "policy": 0.0344, "visits": 0, "q": null}, {"text": "100 - 25 = 75 (gap 10)", "prior": 0.2038, "policy": 0.2038, "visits": 0, "q": null}, {"text": "100 * 25 = 2500 (gap 55)", "prior": 0.0307, "policy": 0.0307, "visits": 0, "q": null}, {"text": "100 / 25 = 4 (gap 55)", "prior": 0.0354, "policy": 0.0354, "visits": 0, "q": null}], "selected": 17, "chosen": 17, "nn_value": 0.6703, "root_value": 0.6703, "simulations": 0}, {"render": {"kind": "countdown", "target": 65, "numbers": [9, 10, 75], "history": ["100 - 25 = 75"], "use_all": false}, "text": "Target: 65. Numbers: 9, 10, 75.", "actions": [{"text": "10 + 9 = 19 (gap 10)", "prior": 0.0181, "policy": 0.0181, "visits": 0, "q": null}, {"text": "10 - 9 = 1 (gap 10)", "prior": 0.0104, "policy": 0.0104, "visits": 0, "q": null}, {"text": "10 * 9 = 90 (gap 10)", "prior": 0.0071, "policy": 0.0071, "visits": 0, "q": null}, {"text": "75 + 9 = 84 (gap 19)", "prior": 0.0031, "policy": 0.0031, "visits": 0, "q": null}, {"text": "75 - 9 = 66 (gap 1)", "prior": 0.0057, "policy": 0.0057, "visits": 0, "q": null}, {"text": "75 * 9 = 675 (gap 55)", "prior": 0.0025, "policy": 0.0025, "visits": 0, "q": null}, {"text": "75 + 10 = 85 (gap 20)", "prior": 0.0026, "policy": 0.0026, "visits": 0, "q": null}, {"text": "75 - 10 = 65 (gap 0)", "prior": 0.9479, "policy": 0.9479, "visits": 0, "q": null}, {"text": "75 * 10 = 750 (gap 56)", "prior": 0.0026, "policy": 0.0026, "visits": 0, "q": null}], "selected": 7, "chosen": 7, "nn_value": 0.5793, "root_value": 0.5793, "simulations": 0}], "final": {"render": {"kind": "countdown", "target": 65, "numbers": [9, 65], "history": ["100 - 25 = 75", "75 - 10 = 65"], "use_all": false}, "text": "Target: 65. Numbers: 9, 65."}, "outcome": {"success": true, "reward": 1.0, "moves": 2}}, "puct16": {"steps": [{"render": {"kind": "countdown", "target": 65, "numbers": [9, 10, 25, 100], "history": [], "use_all": false}, "text": "Target: 65. Numbers: 9, 10, 25, 100.", "actions": [{"text": "10 + 9 = 19 (gap 35)", "prior": 0.0332, "policy": 0.0, "visits": 0, "q": null}, {"text": "10 - 9 = 1 (gap 35)", "prior": 0.0342, "policy": 0.0, "visits": 0, "q": null}, {"text": "10 * 9 = 90 (gap 25)", "prior": 0.0608, "policy": 0.0625, "visits": 1, "q": 0.6091}, {"text": "25 + 9 = 34 (gap 31)", "prior": 0.0349, "policy": 0.0, "visits": 0, "q": null}, {"text": "25 - 9 = 16 (gap 35)", "prior": 0.0386, "policy": 0.0625, "visits": 1, "q": 0.6077}, {"text": "25 * 9 = 225 (gap 35)", "prior": 0.031, "policy": 0.0, "visits": 0, "q": null}, {"text": "100 + 9 = 109 (gap 40)", "prior": 0.0285, "policy": 0.0, "visits": 0, "q": null}, {"text": "100 - 9 = 91 (gap 26)", "prior": 0.0292, "policy": 0.0, "visits": 0, "q": null}, {"text": "100 * 9 = 900 (gap 40)", "prior": 0.0268, "policy": 0.0, "visits": 0, "q": null}, {"text": "25 + 10 = 35 (gap 30)", "prior": 0.1351, "policy": 0.0625, "visits": 1, "q": 0.5925}, {"text": "25 - 10 = 15 (gap 35)", "prior": 0.0335, "policy": 0.0, "visits": 0, "q": null}, {"text": "25 * 10 = 250 (gap 35)", "prior": 0.0285, "policy": 0.0, "visits": 0, "q": null}, {"text": "100 + 10 = 110 (gap 40)", "prior": 0.0289, "policy": 0.0, "visits": 0, "q": null}, {"text": "100 - 10 = 90 (gap 25)", "prior": 0.0834, "policy": 0.0625, "visits": 1, "q": 0.5901}, {"text": "100 * 10 = 1000 (gap 40)", "prior": 0.0277, "policy": 0.0, "visits": 0, "q": null}, {"text": "100 / 10 = 10 (gap 40)", "prior": 0.0416, "policy": 0.0625, "visits": 1, "q": 0.5888}, {"text": "100 + 25 = 125 (gap 55)", "prior": 0.0344, "policy": 0.0, "visits": 0, "q": null}, {"text": "100 - 25 = 75 (gap 10)", "prior": 0.2038, "policy": 0.625, "visits": 10, "q": 0.9579}, {"text": "100 * 25 = 2500 (gap 55)", "prior": 0.0307, "policy": 0.0, "visits": 0, "q": null}, {"text": "100 / 25 = 4 (gap 55)", "prior": 0.0354, "policy": 0.0625, "visits": 1, "q": 0.6049}], "selected": 17, "chosen": 17, "nn_value": 0.6703, "root_value": 0.8143, "simulations": 16, "tree": {"a": null, "p": 1.0, "n": 17, "q": 0.8143, "children": [{"a": "100 - 25 = 75 (gap 10)", "p": 0.2038, "n": 10, "q": 0.9579, "children": [{"a": "75 - 10 = 65 (gap 0)", "p": 0.9479, "n": 9, "q": 1.0, "children": [], "t": true, "tv": 1.0, "ok": true, "s": "Target: 65. Numbers: 9, 65.", "hidden": 0}], "v": 0.5793, "s": "Target: 65. Numbers: 9, 10, 75.", "hidden": 0}, {"a": "10 * 9 = 90 (gap 25)", "p": 0.0608, "n": 1, "q": 0.6091, "children": [], "v": 0.6091, "hidden": 0}, {"a": "25 - 9 = 16 (gap 35)", "p": 0.0386, "n": 1, "q": 0.6077, "children": [], "v": 0.6077, "hidden": 0}, {"a": "25 + 10 = 35 (gap 30)", "p": 0.1351, "n": 1, "q": 0.5925, "children": [], "v": 0.5925, "hidden": 0}, {"a": "100 - 10 = 90 (gap 25)", "p": 0.0834, "n": 1, "q": 0.5901, "children": [], "v": 0.5901, "hidden": 0}, {"a": "100 / 10 = 10 (gap 40)", "p": 0.0416, "n": 1, "q": 0.5888, "children": [], "v": 0.5888, "hidden": 0}, {"a": "100 / 25 = 4 (gap 55)", "p": 0.0354, "n": 1, "q": 0.6049, "children": [], "v": 0.6049, "hidden": 0}], "v": 0.6703, "s": "Target: 65. Numbers: 9, 10, 25, 100.", "hidden": 0, "size": 9}}, {"render": {"kind": "countdown", "target": 65, "numbers": [9, 10, 75], "history": ["100 - 25 = 75"], "use_all": false}, "text": "Target: 65. Numbers: 9, 10, 75.", "actions": [{"text": "10 + 9 = 19 (gap 10)", "prior": 0.0181, "policy": 0.0, "visits": 0, "q": null}, {"text": "10 - 9 = 1 (gap 10)", "prior": 0.0104, "policy": 0.0, "visits": 0, "q": null}, {"text": "10 * 9 = 90 (gap 10)", "prior": 0.0071, "policy": 0.0, "visits": 0, "q": null}, {"text": "75 + 9 = 84 (gap 19)", "prior": 0.0031, "policy": 0.0, "visits": 0, "q": null}, {"text": "75 - 9 = 66 (gap 1)", "prior": 0.0057, "policy": 0.0, "visits": 0, "q": null}, {"text": "75 * 9 = 675 (gap 55)", "prior": 0.0025, "policy": 0.0, "visits": 0, "q": null}, {"text": "75 + 10 = 85 (gap 20)", "prior": 0.0026, "policy": 0.0, "visits": 0, "q": null}, {"text": "75 - 10 = 65 (gap 0)", "prior": 0.9479, "policy": 1.0, "visits": 16, "q": 1.0}, {"text": "75 * 10 = 750 (gap 56)", "prior": 0.0026, "policy": 0.0, "visits": 0, "q": null}], "selected": 7, "chosen": 7, "nn_value": 0.5793, "root_value": 0.9753, "simulations": 16, "tree": {"a": null, "p": 1.0, "n": 17, "q": 0.9753, "children": [{"a": "75 - 10 = 65 (gap 0)", "p": 0.9479, "n": 16, "q": 1.0, "children": [], "t": true, "tv": 1.0, "ok": true, "s": "Target: 65. Numbers: 9, 65.", "hidden": 0}], "v": 0.5793, "s": "Target: 65. Numbers: 9, 10, 75.", "hidden": 0, "size": 2}}], "final": {"render": {"kind": "countdown", "target": 65, "numbers": [9, 65], "history": ["100 - 25 = 75", "75 - 10 = 65"], "use_all": false}, "text": "Target: 65. Numbers: 9, 65."}, "outcome": {"success": true, "reward": 1.0, "moves": 2}}, "uniform-puct16": {"steps": [{"render": {"kind": "countdown", "target": 65, "numbers": [9, 10, 25, 100], "history": [], "use_all": false}, "text": "Target: 65. Numbers: 9, 10, 25, 100.", "actions": [{"text": "10 + 9 = 19 (gap 35)", "prior": 0.05, "policy": 0.0625, "visits": 1, "q": 0.0}, {"text": "10 - 9 = 1 (gap 35)", "prior": 0.05, "policy": 0.0625, "visits": 1, "q": 0.0}, {"text": "10 * 9 = 90 (gap 25)", "prior": 0.05, "policy": 0.0625, "visits": 1, "q": 0.0}, {"text": "25 + 9 = 34 (gap 31)", "prior": 0.05, "policy": 0.0625, "visits": 1, "q": 0.0}, {"text": "25 - 9 = 16 (gap 35)", "prior": 0.05, "policy": 0.0625, "visits": 1, "q": 0.0}, {"text": "25 * 9 = 225 (gap 35)", "prior": 0.05, "policy": 0.0625, "visits": 1, "q": 0.0}, {"text": "100 + 9 = 109 (gap 40)", "prior": 0.05, "policy": 0.0625, "visits": 1, "q": 0.0}, {"text": "100 - 9 = 91 (gap 26)", "prior": 0.05, "policy": 0.0625, "visits": 1, "q": 0.0}, {"text": "100 * 9 = 900 (gap 40)", "prior": 0.05, "policy": 0.0625, "visits": 1, "q": 0.0}, {"text": "25 + 10 = 35 (gap 30)", "prior": 0.05, "policy": 0.0625, "visits": 1, "q": 0.0}, {"text": "25 - 10 = 15 (gap 35)", "prior": 0.05, "policy": 0.0625, "visits": 1, "q": 0.0}, {"text": "25 * 10 = 250 (gap 35)", "prior": 0.05, "policy": 0.0625, "visits": 1, "q": 0.0}, {"text": "100 + 10 = 110 (gap 40)", "prior": 0.05, "policy": 0.0625, "visits": 1, "q": 0.0}, {"text": "100 - 10 = 90 (gap 25)", "prior": 0.05, "policy": 0.0625, "visits": 1, "q": 0.0}, {"text": "100 * 10 = 1000 (gap 40)", "prior": 0.05, "policy": 0.0625, "visits": 1, "q": 0.0}, {"text": "100 / 10 = 10 (gap 40)", "prior": 0.05, "policy": 0.0625, "visits": 1, "q": 0.0}, {"text": "100 + 25 = 125 (gap 55)", "prior": 0.05, "policy": 0.0, "visits": 0, "q": null}, {"text": "100 - 25 = 75 (gap 10)", "prior": 0.05, "policy": 0.0, "visits": 0, "q": null}, {"text": "100 * 25 = 2500 (gap 55)", "prior": 0.05, "policy": 0.0, "visits": 0, "q": null}, {"text": "100 / 25 = 4 (gap 55)", "prior": 0.05, "policy": 0.0, "visits": 0, "q": null}], "selected": 0, "chosen": 0, "nn_value": 0.0, "root_value": 0.0, "simulations": 16}, {"render": {"kind": "countdown", "target": 65, "numbers": [19, 25, 100], "history": ["10 + 9 = 19"], "use_all": false}, "text": "Target: 65. Numbers: 19, 25, 100.", "actions": [{"text": "25 + 19 = 44 (gap 21)", "prior": 0.1, "policy": 0.125, "visits": 2, "q": -0.5}, {"text": "25 - 19 = 6 (gap 35)", "prior": 0.1, "policy": 0.125, "visits": 2, "q": -0.5}, {"text": "25 * 19 = 475 (gap 35)", "prior": 0.1, "policy": 0.125, "visits": 2, "q": -0.5}, {"text": "100 + 19 = 119 (gap 40)", "prior": 0.1, "policy": 0.125, "visits": 2, "q": -0.5}, {"text": "100 - 19 = 81 (gap 16)", "prior": 0.1, "policy": 0.125, "visits": 2, "q": -0.5}, {"text": "100 * 19 = 1900 (gap 40)", "prior": 0.1, "policy": 0.125, "visits": 2, "q": -0.5}, {"text": "100 + 25 = 125 (gap 46)", "prior": 0.1, "policy": 0.0625, "visits": 1, "q": 0.0}, {"text": "100 - 25 = 75 (gap 10)", "prior": 0.1, "policy": 0.0625, "visits": 1, "q": 0.0}, {"text": "100 * 25 = 2500 (gap 46)", "prior": 0.1, "policy": 0.0625, "visits": 1, "q": 0.0}, {"text": "100 / 25 = 4 (gap 46)", "prior": 0.1, "policy": 0.0625, "visits": 1, "q": 0.0}], "selected": 0, "chosen": 0, "nn_value": 0.0, "root_value": -0.3529, "simulations": 16}, {"render": {"kind": "countdown", "target": 65, "numbers": [44, 100], "history": ["10 + 9 = 19", "25 + 19 = 44"], "use_all": false}, "text": "Target: 65. Numbers: 44, 100.", "actions": [{"text": "100 + 44 = 144 (gap 79)", "prior": 0.3333, "policy": 0.375, "visits": 6, "q": -1.0}, {"text": "100 - 44 = 56 (gap 9)", "prior": 0.3333, "policy": 0.3125, "visits": 5, "q": -1.0}, {"text": "100 * 44 = 4400 (gap 4335)", "prior": 0.3333, "policy": 0.3125, "visits": 5, "q": -1.0}], "selected": 0, "chosen": 0, "nn_value": 0.0, "root_value": -0.9412, "simulations": 16}], "final": {"render": {"kind": "countdown", "target": 65, "numbers": [144], "history": ["10 + 9 = 19", "25 + 19 = 44", "100 + 44 = 144"], "use_all": false}, "text": "Target: 65. Numbers: 144."}, "outcome": {"success": false, "reward": 0.0, "moves": 3}}, "uniform-gumbel16": {"steps": [{"render": {"kind": "countdown", "target": 65, "numbers": [9, 10, 25, 100], "history": [], "use_all": false}, "text": "Target: 65. Numbers: 9, 10, 25, 100.", "actions": [{"text": "10 + 9 = 19 (gap 35)", "prior": 0.05, "policy": 0.05, "visits": 4, "q": 0.0}, {"text": "10 - 9 = 1 (gap 35)", "prior": 0.05, "policy": 0.05, "visits": 4, "q": 0.0}, {"text": "10 * 9 = 90 (gap 25)", "prior": 0.05, "policy": 0.05, "visits": 2, "q": 0.0}, {"text": "25 + 9 = 34 (gap 31)", "prior": 0.05, "policy": 0.05, "visits": 2, "q": 0.0}, {"text": "25 - 9 = 16 (gap 35)", "prior": 0.05, "policy": 0.05, "visits": 1, "q": 0.0}, {"text": "25 * 9 = 225 (gap 35)", "prior": 0.05, "policy": 0.05, "visits": 1, "q": 0.0}, {"text": "100 + 9 = 109 (gap 40)", "prior": 0.05, "policy": 0.05, "visits": 1, "q": 0.0}, {"text": "100 - 9 = 91 (gap 26)", "prior": 0.05, "policy": 0.05, "visits": 1, "q": 0.0}, {"text": "100 * 9 = 900 (gap 40)", "prior": 0.05, "policy": 0.05, "visits": 0, "q": null}, {"text": "25 + 10 = 35 (gap 30)", "prior": 0.05, "policy": 0.05, "visits": 0, "q": null}, {"text": "25 - 10 = 15 (gap 35)", "prior": 0.05, "policy": 0.05, "visits": 0, "q": null}, {"text": "25 * 10 = 250 (gap 35)", "prior": 0.05, "policy": 0.05, "visits": 0, "q": null}, {"text": "100 + 10 = 110 (gap 40)", "prior": 0.05, "policy": 0.05, "visits": 0, "q": null}, {"text": "100 - 10 = 90 (gap 25)", "prior": 0.05, "policy": 0.05, "visits": 0, "q": null}, {"text": "100 * 10 = 1000 (gap 40)", "prior": 0.05, "policy": 0.05, "visits": 0, "q": null}, {"text": "100 / 10 = 10 (gap 40)", "prior": 0.05, "policy": 0.05, "visits": 0, "q": null}, {"text": "100 + 25 = 125 (gap 55)", "prior": 0.05, "policy": 0.05, "visits": 0, "q": null}, {"text": "100 - 25 = 75 (gap 10)", "prior": 0.05, "policy": 0.05, "visits": 0, "q": null}, {"text": "100 * 25 = 2500 (gap 55)", "prior": 0.05, "policy": 0.05, "visits": 0, "q": null}, {"text": "100 / 25 = 4 (gap 55)", "prior": 0.05, "policy": 0.05, "visits": 0, "q": null}], "selected": 0, "chosen": 0, "nn_value": 0.0, "root_value": 0.0, "simulations": 16}, {"render": {"kind": "countdown", "target": 65, "numbers": [19, 25, 100], "history": ["10 + 9 = 19"], "use_all": false}, "text": "Target: 65. Numbers: 19, 25, 100.", "actions": [{"text": "25 + 19 = 44 (gap 21)", "prior": 0.1, "policy": 0.0, "visits": 4, "q": -0.75}, {"text": "25 - 19 = 6 (gap 35)", "prior": 0.1, "policy": 0.0, "visits": 4, "q": -0.75}, {"text": "25 * 19 = 475 (gap 35)", "prior": 0.1, "policy": 0.0, "visits": 2, "q": -0.5}, {"text": "100 + 19 = 119 (gap 40)", "prior": 0.1, "policy": 0.0, "visits": 2, "q": -0.5}, {"text": "100 - 19 = 81 (gap 16)", "prior": 0.1, "policy": 0.25, "visits": 1, "q": 0.0}, {"text": "100 * 19 = 1900 (gap 40)", "prior": 0.1, "policy": 0.25, "visits": 1, "q": 0.0}, {"text": "100 + 25 = 125 (gap 46)", "prior": 0.1, "policy": 0.25, "visits": 1, "q": 0.0}, {"text": "100 - 25 = 75 (gap 10)", "prior": 0.1, "policy": 0.25, "visits": 1, "q": 0.0}, {"text": "100 * 25 = 2500 (gap 46)", "prior": 0.1, "policy": 0.0001, "visits": 0, "q": null}, {"text": "100 / 25 = 4 (gap 46)", "prior": 0.1, "policy": 0.0001, "visits": 0, "q": null}], "selected": 0, "chosen": 0, "nn_value": 0.0, "root_value": -0.0001, "simulations": 16}, {"render": {"kind": "countdown", "target": 65, "numbers": [44, 100], "history": ["10 + 9 = 19", "25 + 19 = 44"], "use_all": false}, "text": "Target: 65. Numbers: 44, 100.", "actions": [{"text": "100 + 44 = 144 (gap 79)", "prior": 0.3333, "policy": 0.3333, "visits": 8, "q": -1.0}, {"text": "100 - 44 = 56 (gap 9)", "prior": 0.3333, "policy": 0.3333, "visits": 6, "q": -1.0}, {"text": "100 * 44 = 4400 (gap 4335)", "prior": 0.3333, "policy": 0.3333, "visits": 2, "q": -1.0}], "selected": 0, "chosen": 0, "nn_value": 0.0, "root_value": -1.0, "simulations": 16}], "final": {"render": {"kind": "countdown", "target": 65, "numbers": [144], "history": ["10 + 9 = 19", "25 + 19 = 44", "100 + 44 = 144"], "use_all": false}, "text": "Target: 65. Numbers: 144."}, "outcome": {"success": false, "reward": 0.0, "moves": 3}}, "rollout-puct16": {"steps": [{"render": {"kind": "countdown", "target": 65, "numbers": [9, 10, 25, 100], "history": [], "use_all": false}, "text": "Target: 65. Numbers: 9, 10, 25, 100.", "actions": [{"text": "10 + 9 = 19 (gap 35)", "prior": 0.05, "policy": 0.0625, "visits": 1, "q": -1.0}, {"text": "10 - 9 = 1 (gap 35)", "prior": 0.05, "policy": 0.0625, "visits": 1, "q": -1.0}, {"text": "10 * 9 = 90 (gap 25)", "prior": 0.05, "policy": 0.0625, "visits": 1, "q": -1.0}, {"text": "25 + 9 = 34 (gap 31)", "prior": 0.05, "policy": 0.0625, "visits": 1, "q": -1.0}, {"text": "25 - 9 = 16 (gap 35)", "prior": 0.05, "policy": 0.0625, "visits": 1, "q": -1.0}, {"text": "25 * 9 = 225 (gap 35)", "prior": 0.05, "policy": 0.0625, "visits": 1, "q": -1.0}, {"text": "100 + 9 = 109 (gap 40)", "prior": 0.05, "policy": 0.0625, "visits": 1, "q": -1.0}, {"text": "100 - 9 = 91 (gap 26)", "prior": 0.05, "policy": 0.0625, "visits": 1, "q": -1.0}, {"text": "100 * 9 = 900 (gap 40)", "prior": 0.05, "policy": 0.0625, "visits": 1, "q": -1.0}, {"text": "25 + 10 = 35 (gap 30)", "prior": 0.05, "policy": 0.0625, "visits": 1, "q": -1.0}, {"text": "25 - 10 = 15 (gap 35)", "prior": 0.05, "policy": 0.0625, "visits": 1, "q": -1.0}, {"text": "25 * 10 = 250 (gap 35)", "prior": 0.05, "policy": 0.0625, "visits": 1, "q": -1.0}, {"text": "100 + 10 = 110 (gap 40)", "prior": 0.05, "policy": 0.0625, "visits": 1, "q": -1.0}, {"text": "100 - 10 = 90 (gap 25)", "prior": 0.05, "policy": 0.0625, "visits": 1, "q": -1.0}, {"text": "100 * 10 = 1000 (gap 40)", "prior": 0.05, "policy": 0.0625, "visits": 1, "q": -1.0}, {"text": "100 / 10 = 10 (gap 40)", "prior": 0.05, "policy": 0.0625, "visits": 1, "q": -1.0}, {"text": "100 + 25 = 125 (gap 55)", "prior": 0.05, "policy": 0.0, "visits": 0, "q": null}, {"text": "100 - 25 = 75 (gap 10)", "prior": 0.05, "policy": 0.0, "visits": 0, "q": null}, {"text": "100 * 25 = 2500 (gap 55)", "prior": 0.05, "policy": 0.0, "visits": 0, "q": null}, {"text": "100 / 25 = 4 (gap 55)", "prior": 0.05, "policy": 0.0, "visits": 0, "q": null}], "selected": 0, "chosen": 0, "nn_value": -1.0, "root_value": -1.0, "simulations": 16}, {"render": {"kind": "countdown", "target": 65, "numbers": [19, 25, 100], "history": ["10 + 9 = 19"], "use_all": false}, "text": "Target: 65. Numbers: 19, 25, 100.", "actions": [{"text": "25 + 19 = 44 (gap 21)", "prior": 0.1, "policy": 0.125, "visits": 2, "q": -1.0}, {"text": "25 - 19 = 6 (gap 35)", "prior": 0.1, "policy": 0.125, "visits": 2, "q": -1.0}, {"text": "25 * 19 = 475 (gap 35)", "prior": 0.1, "policy": 0.125, "visits": 2, "q": -1.0}, {"text": "100 + 19 = 119 (gap 40)", "prior": 0.1, "policy": 0.125, "visits": 2, "q": -1.0}, {"text": "100 - 19 = 81 (gap 16)", "prior": 0.1, "policy": 0.125, "visits": 2, "q": -1.0}, {"text": "100 * 19 = 1900 (gap 40)", "prior": 0.1, "policy": 0.125, "visits": 2, "q": -1.0}, {"text": "100 + 25 = 125 (gap 46)", "prior": 0.1, "policy": 0.0625, "visits": 1, "q": -1.0}, {"text": "100 - 25 = 75 (gap 10)", "prior": 0.1, "policy": 0.0625, "visits": 1, "q": -1.0}, {"text": "100 * 25 = 2500 (gap 46)", "prior": 0.1, "policy": 0.0625, "visits": 1, "q": -1.0}, {"text": "100 / 25 = 4 (gap 46)", "prior": 0.1, "policy": 0.0625, "visits": 1, "q": -1.0}], "selected": 0, "chosen": 0, "nn_value": -1.0, "root_value": -1.0, "simulations": 16}, {"render": {"kind": "countdown", "target": 65, "numbers": [44, 100], "history": ["10 + 9 = 19", "25 + 19 = 44"], "use_all": false}, "text": "Target: 65. Numbers: 44, 100.", "actions": [{"text": "100 + 44 = 144 (gap 79)", "prior": 0.3333, "policy": 0.375, "visits": 6, "q": -1.0}, {"text": "100 - 44 = 56 (gap 9)", "prior": 0.3333, "policy": 0.3125, "visits": 5, "q": -1.0}, {"text": "100 * 44 = 4400 (gap 4335)", "prior": 0.3333, "policy": 0.3125, "visits": 5, "q": -1.0}], "selected": 0, "chosen": 0, "nn_value": -1.0, "root_value": -1.0, "simulations": 16}], "final": {"render": {"kind": "countdown", "target": 65, "numbers": [144], "history": ["10 + 9 = 19", "25 + 19 = 44", "100 + 44 = 144"], "use_all": false}, "text": "Target: 65. Numbers: 144."}, "outcome": {"success": false, "reward": 0.0, "moves": 3}}, "teacher": {"steps": [{"render": {"kind": "countdown", "target": 65, "numbers": [9, 10, 25, 100], "history": [], "use_all": false}, "text": "Target: 65. Numbers: 9, 10, 25, 100.", "actions": [{"text": "10 + 9 = 19 (gap 35)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "10 - 9 = 1 (gap 35)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "10 * 9 = 90 (gap 25)", "prior": 0.25, "policy": 0.25, "visits": 0, "q": 0.0}, {"text": "25 + 9 = 34 (gap 31)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "25 - 9 = 16 (gap 35)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "25 * 9 = 225 (gap 35)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "100 + 9 = 109 (gap 40)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "100 - 9 = 91 (gap 26)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "100 * 9 = 900 (gap 40)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "25 + 10 = 35 (gap 30)", "prior": 0.25, "policy": 0.25, "visits": 0, "q": 0.0}, {"text": "25 - 10 = 15 (gap 35)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "25 * 10 = 250 (gap 35)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "100 + 10 = 110 (gap 40)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "100 - 10 = 90 (gap 25)", "prior": 0.25, "policy": 0.25, "visits": 0, "q": 0.0}, {"text": "100 * 10 = 1000 (gap 40)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "100 / 10 = 10 (gap 40)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "100 + 25 = 125 (gap 55)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "100 - 25 = 75 (gap 10)", "prior": 0.25, "policy": 0.25, "visits": 0, "q": 0.0}, {"text": "100 * 25 = 2500 (gap 55)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "100 / 25 = 4 (gap 55)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}], "selected": 2, "chosen": 2, "nn_value": null, "root_value": 1.0, "simulations": 0}, {"render": {"kind": "countdown", "target": 65, "numbers": [25, 90, 100], "history": ["10 * 9 = 90"], "use_all": false}, "text": "Target: 65. Numbers: 25, 90, 100.", "actions": [{"text": "90 + 25 = 115 (gap 35)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "90 - 25 = 65 (gap 0)", "prior": 1.0, "policy": 1.0, "visits": 0, "q": 0.0}, {"text": "90 * 25 = 2250 (gap 35)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "100 + 25 = 125 (gap 25)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "100 - 25 = 75 (gap 10)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "100 * 25 = 2500 (gap 25)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "100 / 25 = 4 (gap 25)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "100 + 90 = 190 (gap 40)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "100 - 90 = 10 (gap 40)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}, {"text": "100 * 90 = 9000 (gap 40)", "prior": 0.0, "policy": 0.0, "visits": 0, "q": 0.0}], "selected": 1, "chosen": 1, "nn_value": null, "root_value": 1.0, "simulations": 0}], "final": {"render": {"kind": "countdown", "target": 65, "numbers": [65, 100], "history": ["10 * 9 = 90", "90 - 25 = 65"], "use_all": false}, "text": "Target: 65. Numbers: 65, 100."}, "outcome": {"success": true, "reward": 1.0, "moves": 2}}}}, "curves": {"xs": ["0:initial", "0:warmstart", "1:selfplay"], "points": [{"x": "0:initial", "label": "greedy", "success": 0.1, "reward": 0.1, "moves": 2.966666666666667}, {"x": "0:initial", "label": "puct16", "success": 0.16666666666666666, "reward": 0.16666666666666666, "moves": 2.966666666666667}, {"x": "0:warmstart", "label": "greedy", "success": 0.7, "reward": 0.7, "moves": 2.7}, {"x": "0:warmstart", "label": "puct16", "success": 0.8333333333333334, "reward": 0.8333333333333334, "moves": 2.6333333333333333}, {"x": "1:selfplay", "label": "greedy", "success": 0.7, "reward": 0.7, "moves": 2.7666666666666666}, {"x": "1:selfplay", "label": "puct16", "success": 0.9333333333333333, "reward": 0.9333333333333333, "moves": 2.6333333333333333}], "baselines": [{"label": "uniform-puct16", "success": 0.3, "reward": 0.3, "moves": 2.9}, {"label": "uniform-gumbel16", "success": 0.3333333333333333, "reward": 0.3333333333333333, "moves": 2.9}, {"label": "rollout-puct16", "success": 0.5666666666666667, "reward": 0.5666666666666667, "moves": 2.8666666666666667}], "train": [{"iteration": 0, "stage": "warmstart", "policy_ce": 1.6979100849033424, "value_ce": 0.5383142937562198, "heldout_policy_top1": 0.775, "heldout_value_brier": 0.1682658408768475, "temperature_choice": 1.410674810409546, "temperature_noul": 2.502737522125244, "samples": 403}, {"iteration": 1, "stage": "selfplay", "policy_ce": 1.4073116777237562, "value_ce": 0.6478012419549061, "heldout_policy_top1": 0.7083333333333334, "heldout_value_brier": 0.16969728035231432, "temperature_choice": 1.646436095237732, "temperature_noul": 0.5, "samples": 245}], "selfplay": [{"iteration": 1, "success": 0.8125, "moves": 2.75, "samples": 44, "seconds": 75.62639045715332, "rows_per_second": 6.796569251724508}]}};
+</script>
+<script>/* Laya × MCTS search visualiser. Static mode reads window.VIZ_DATA; live mode talks to /api/*. */
+(() => {
+  "use strict";
+
+  const MODE = window.VIZ_MODE || "static";
+  let DATA = window.VIZ_DATA || { meta: { methods: [] }, problems: [], traces: {}, curves: null };
+  const app = document.getElementById("app");
+  const tip = document.getElementById("tooltip");
+  const S = { tab: "replay", pid: null, method: null, step: 0, treeSrc: null, treeStep: 0, treeSel: null,
+              cmpPid: null, curvesTable: false, live: null, busy: false, error: null };
+
+  // ---------------------------------------------------------------- helpers
+  function el(tag, attrs, ...kids) {
+    const n = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs || {})) {
+      if (v == null || v === false) continue;
+      if (k === "text") n.textContent = v;
+      else if (k === "class") n.className = v;
+      else if (k === "style") n.setAttribute("style", v);
+      else if (k.startsWith("on")) n.addEventListener(k.slice(2), v);
+      else n.setAttribute(k, v === true ? "" : v);
+    }
+    for (const c of kids.flat()) if (c != null && c !== false) n.append(c instanceof Node ? c : document.createTextNode(String(c)));
+    return n;
+  }
+  const NS = "http://www.w3.org/2000/svg";
+  function sv(tag, attrs, ...kids) {
+    const n = document.createElementNS(NS, tag);
+    for (const [k, v] of Object.entries(attrs || {})) {
+      if (v == null) continue;
+      if (k === "text") n.textContent = v;
+      else if (k.startsWith("on")) n.addEventListener(k.slice(2), v);
+      else n.setAttribute(k, v);
+    }
+    for (const c of kids.flat()) if (c) n.append(c);
+    return n;
+  }
+  const fmt = (x, d = 3) => (x == null || Number.isNaN(x) ? "–" : Number(x).toFixed(d));
+  const pct = (x) => (x == null ? "–" : `${Math.round(100 * x)}%`);
+  const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+
+  function methodIndex(label) { return DATA.meta.methods.findIndex((m) => m.label === label); }
+  // Color follows the entity (method order in the config); past 8 slots fold to muted ink.
+  function methodColor(label) {
+    const i = methodIndex(label);
+    return i >= 0 && i < 8 ? `var(--series-${i + 1})` : "var(--text-muted)";
+  }
+  function methodTitle(label) {
+    const m = DATA.meta.methods.find((x) => x.label === label);
+    if (!m) return label;
+    if (m.searcher === "teacher") return `${label}（精確解題器，參考上限）`;
+    const who = m.evaluator === "model" ? "Laya" : m.evaluator === "uniform" ? "均勻先驗" : m.evaluator === "rollout" ? "隨機 rollout" : m.evaluator;
+    if (m.searcher === "greedy") return `${label}（${who}，不搜尋）`;
+    return `${label}（${who} + ${m.searcher.toUpperCase()}${m.simulations ? " " + m.simulations + " 次模擬" : ""}）`;
+  }
+  function stageLabel(x) {
+    const [it, stage] = x.split(":");
+    if (stage === "initial") return "訓練前";
+    if (stage === "warmstart") return "warm start";
+    return `第 ${it} 輪`;
+  }
+
+  function hexToRgb(h) {
+    h = h.replace("#", "");
+    if (h.length === 3) h = h.split("").map((c) => c + c).join("");
+    const n = parseInt(h, 16);
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  }
+  function mix(a, b, t) {
+    const x = hexToRgb(a), y = hexToRgb(b);
+    return `rgb(${x.map((v, i) => Math.round(v + (y[i] - v) * t)).join(",")})`;
+  }
+  // Diverging: Q in [-1, 1] -> red .. gray .. blue (gray means "no evidence either way").
+  function qColor(q) {
+    if (q == null) return cssVar("--div-mid");
+    const t = Math.min(1, Math.abs(q));
+    return mix(cssVar("--div-mid"), cssVar(q >= 0 ? "--div-pos" : "--div-neg"), t);
+  }
+
+  function showTip(ev, title, rows) {
+    tip.replaceChildren();
+    if (title) tip.append(el("div", { class: "secondary", text: title }));
+    for (const r of rows) {
+      tip.append(el("div", { class: "row" },
+        r.color ? el("span", { class: "key", style: `background:${r.color}` }) : null,
+        el("b", { text: r.value }), el("span", { class: "secondary", text: r.label })));
+    }
+    tip.hidden = false;
+    const x = Math.min(window.innerWidth - tip.offsetWidth - 8, ev.clientX + 14);
+    const y = Math.min(window.innerHeight - tip.offsetHeight - 8, ev.clientY + 14);
+    tip.style.left = `${Math.max(8, x)}px`;
+    tip.style.top = `${Math.max(8, y)}px`;
+  }
+  function hideTip() { tip.hidden = true; }
+
+  async function api(path, body) {
+    const res = await fetch(path, body === undefined ? {} : {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    const js = await res.json();
+    if (!res.ok || js.error) throw new Error(js.error || res.statusText);
+    return js;
+  }
+
+  // ---------------------------------------------------------------- environment panels
+  function renderState(r) {
+    if (!r) return el("div", { class: "empty", text: "沒有狀態" });
+    if (r.kind === "countdown") {
+      const hit = r.use_all ? (r.numbers.length === 1 && r.numbers[0] === r.target) : r.numbers.includes(r.target);
+      return el("div", {},
+        el("div", { class: "cd-target" }, "目標", el("b", { text: r.target })),
+        el("div", { class: "cd-tiles" }, r.numbers.map((n) => el("div", { class: "cd-tile" + (n === r.target ? " hit" : ""), text: n }))),
+        hit ? badge(true, "已湊出目標") : null,
+        r.history && r.history.length ? el("ol", { class: "history" }, r.history.map((h) => el("li", { text: h }))) : null);
+    }
+    if (r.kind === "algebra") {
+      return el("div", {},
+        el("div", { class: "secondary", text: `已用 ${r.steps} / ${r.max_steps} 步` }),
+        el("div", { class: "eq" }, el("span", { text: r.lhs }), el("span", { class: "rel", text: "=" }), el("span", { text: r.rhs })),
+        r.solved ? badge(true, "已解出") : null,
+        r.original ? el("div", { class: "muted", text: `原題：${r.original}` }) : null);
+    }
+    if (r.kind === "textworld") return renderTextWorld(r);
+    return el("pre", { class: "statetext", text: r.text || "" });
+  }
+
+  function renderTextWorld(r) {
+    const box = el("div", {});
+    if (r.goal) box.append(el("div", {}, el("span", { class: "secondary", text: "目標　" }), el("span", { text: r.goal })));
+    if (r.map && r.map.rooms && r.map.rooms.length) box.append(worldMap(r.map));
+    box.append(el("pre", { class: "statetext", text: r.text || "" }));
+    return box;
+  }
+
+  // Rooms on TextWorld's own grid coordinates; the player's room is ringed, visited rooms are tinted.
+  function worldMap(m) {
+    const xs = m.rooms.map((r) => r.x), ys = m.rooms.map((r) => r.y);
+    const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
+    const cw = 120, ch = 64, pad = 16;
+    const W = (maxX - minX + 1) * cw + pad * 2, H = (maxY - minY + 1) * ch + pad * 2;
+    const pos = (r) => [pad + (r.x - minX) * cw + cw / 2, pad + (maxY - r.y) * ch + ch / 2];
+    const byName = Object.fromEntries(m.rooms.map((r) => [r.name, r]));
+    const svg = sv("svg", { viewBox: `0 0 ${W} ${H}`, width: W, height: H, role: "img", "aria-label": "世界地圖" });
+    for (const [a, b] of m.edges || []) {
+      if (!byName[a] || !byName[b]) continue;
+      const [x1, y1] = pos(byName[a]), [x2, y2] = pos(byName[b]);
+      svg.append(sv("line", { x1, y1, x2, y2, stroke: cssVar("--axis"), "stroke-width": 2 }));
+    }
+    for (const r of m.rooms) {
+      const [x, y] = pos(r);
+      const g = sv("g", {});
+      g.append(sv("rect", { x: x - 48, y: y - 18, width: 96, height: 36, rx: 6, fill: cssVar("--surface-1") }));  // opaque base
+      g.append(sv("rect", { x: x - 48, y: y - 18, width: 96, height: 36, rx: 6,
+        fill: r.visited ? cssVar("--accent-wash") : cssVar("--surface-2"),
+        stroke: r.player ? cssVar("--text-primary") : cssVar("--border"), "stroke-width": r.player ? 2 : 1 }));
+      g.append(sv("text", { x, y: y + 4, "text-anchor": "middle", fill: cssVar("--text-secondary"), "font-size": 11,
+        text: r.name.length > 16 ? r.name.slice(0, 15) + "…" : r.name }));
+      g.addEventListener("pointermove", (ev) => showTip(ev, r.name, [
+        { value: r.player ? "目前位置" : r.visited ? "已造訪" : "未造訪", label: "" },
+        ...(r.items || []).slice(0, 8).map((it) => ({ value: it, label: "" }))]));
+      g.addEventListener("pointerleave", hideTip);
+      svg.append(g);
+    }
+    return el("div", { class: "tree-wrap", style: "max-height:320px;margin:8px 0" }, svg);
+  }
+
+  function badge(ok, text) {
+    return el("span", { class: "badge " + (ok ? "ok" : "fail") }, el("span", { class: "dot" }), text);
+  }
+  function outcomeBadge(o) {
+    if (!o) return null;
+    return badge(o.success, `${o.success ? "成功" : "失敗"} · reward ${fmt(o.reward)} · ${o.moves} 步`);
+  }
+
+  // ---------------------------------------------------------------- candidates
+  function candidatesCard(step, opts = {}) {
+    const card = el("div", { class: "card" });
+    card.append(el("h2", { text: opts.title || "候選動作" }));
+    card.append(el("p", { class: "hint", text: step.simulations
+      ? `Laya 給每個動作先驗 P(s,a)，MCTS 做 ${step.simulations} 次模擬後得到搜尋策略 π；Q 是該動作的平均價值（−1 到 1）。`
+      : "沒有搜尋：直接依 Laya（或 teacher）的機率選擇。" }));
+    card.append(el("div", { class: "stats" },
+      stat("Laya 價值 V(s)", fmt(step.nn_value, 2)),
+      stat("搜尋價值", fmt(step.root_value, 2)),
+      stat("選擇", step.actions[step.chosen] ? step.actions[step.chosen].text : "–")));
+    card.append(el("div", { class: "legend" },
+      el("span", { class: "key" }, el("span", { class: "sw", style: "background:var(--series-1)" }), "先驗 P(s,a)"),
+      el("span", { class: "key" }, el("span", { class: "sw", style: "background:var(--series-2)" }), "搜尋策略 π")));
+    const order = step.actions.map((a, i) => i).sort((a, b) => (step.actions[b].policy ?? 0) - (step.actions[a].policy ?? 0));
+    const tbody = el("tbody");
+    for (const i of order) {
+      const a = step.actions[i];
+      const row = el("tr", { class: (i === step.chosen ? "chosen" : "") + (opts.onPick ? " live" : ""),
+        title: opts.onPick ? "點擊以執行這個動作" : null, onclick: opts.onPick ? () => opts.onPick(i) : null });
+      row.append(el("td", { class: "act" }, i === step.chosen ? "✓ " : "", a.text));
+      const bars = el("div", { class: "bars" },
+        el("div", { class: "bar", style: `width:${Math.max(0.5, 100 * (a.prior ?? 0))}%;background:var(--series-1)` }),
+        el("div", { class: "bar", style: `width:${Math.max(0.5, 100 * (a.policy ?? 0))}%;background:var(--series-2)` }));
+      bars.addEventListener("pointermove", (ev) => showTip(ev, a.text, [
+        { color: "var(--series-1)", value: pct(a.prior), label: "先驗" },
+        { color: "var(--series-2)", value: pct(a.policy), label: "搜尋策略" },
+        { value: String(a.visits), label: "拜訪次數" }, { value: fmt(a.q), label: "Q" }]));
+      bars.addEventListener("pointerleave", hideTip);
+      row.append(el("td", { style: "width:34%" }, bars));
+      row.append(el("td", { class: "num", text: a.visits }));
+      row.append(el("td", { class: "num" }, qbar(a.q), " ", fmt(a.q, 2)));
+      tbody.append(row);
+    }
+    card.append(el("table", { class: "cands" },
+      el("thead", {}, el("tr", {}, el("th", { text: "動作" }), el("th", { text: "先驗 / 策略" }),
+        el("th", { class: "num", text: "拜訪" }), el("th", { class: "num", text: "Q" }))), tbody));
+    return card;
+  }
+  function stat(label, value) {
+    return el("div", { class: "stat" }, el("div", { class: "label", text: label }), el("div", { class: "value tnum", text: value }));
+  }
+  function qbar(q) {
+    const box = el("span", { class: "qbar", style: "display:inline-block;vertical-align:middle" }, el("span", { class: "mid" }));
+    if (q != null) {
+      const w = Math.min(1, Math.abs(q)) * 32;
+      box.append(el("span", { class: "fill", style: `${q >= 0 ? "left:50%" : `left:calc(50% - ${w}px)`};width:${w}px;` +
+        `background:${q >= 0 ? "var(--div-pos)" : "var(--div-neg)"};border-radius:${q >= 0 ? "0 3px 3px 0" : "3px 0 0 3px"}` }));
+    }
+    return box;
+  }
+
+  // ---------------------------------------------------------------- replay
+  function problemLabel(p, i) {
+    const r = p.render || {};
+    if (r.kind === "countdown") return `第 ${i + 1} 題：目標 ${r.target}，數字 ${r.numbers.join(" ")}`;
+    if (r.kind === "algebra") return `第 ${i + 1} 題：${r.lhs} = ${r.rhs}`;
+    if (r.kind === "textworld") return `第 ${i + 1} 題：${(r.goal || "").slice(0, 48)}`;
+    return `第 ${i + 1} 題`;
+  }
+
+  function staticReplay() {
+    const wrap = el("div", {});
+    if (!DATA.problems.length) return el("div", { class: "empty", text: "這份報告沒有對局資料。" });
+    S.pid = S.pid || DATA.problems[0].id;
+    const methods = Object.keys(DATA.traces[S.pid] || {});
+    if (!methods.includes(S.method)) S.method = methods[0];
+    const trace = DATA.traces[S.pid][S.method];
+    const n = trace.steps.length;
+    S.step = Math.min(S.step, n);
+    const controls = el("div", { class: "controls" },
+      el("label", {}, "題目", select(DATA.problems.map((p, i) => [p.id, problemLabel(p, i)]), S.pid, (v) => { S.pid = v; S.step = 0; render(); })),
+      el("label", {}, "方法", select(methods.map((m) => [m, methodTitle(m)]), S.method, (v) => { S.method = v; S.step = 0; render(); })),
+      stepNav(n, S.step, (k) => { S.step = k; render(); }));
+    wrap.append(controls);
+    const atEnd = S.step >= n;
+    const cur = atEnd ? trace.final : trace.steps[S.step];
+    const left = el("div", { class: "card" },
+      el("h2", { text: atEnd ? "最終狀態" : `第 ${S.step + 1} 步之前的狀態` }),
+      atEnd ? el("div", { style: "margin-bottom:8px" }, outcomeBadge(trace.outcome)) : null,
+      renderState(cur.render),
+      cur.render && !["text", "textworld"].includes(cur.render.kind) ? el("details", {}, el("summary", { class: "muted", text: "Laya 看到的狀態文字" }),
+        el("pre", { class: "statetext", text: cur.text })) : null);
+    let right;
+    if (atEnd) {
+      right = el("div", { class: "card" }, el("h2", { text: "結果" }), el("p", {}, outcomeBadge(trace.outcome)),
+        el("ol", { class: "history" }, trace.steps.map((s) => el("li", { text: s.actions[s.chosen].text }))));
+    } else {
+      const step = trace.steps[S.step];
+      right = candidatesCard(step);
+      if (step.tree) right.append(el("p", {}, el("button", { class: "btn", text: "在搜尋樹中查看這一步",
+        onclick: () => { S.tab = "tree"; S.treeSrc = `${S.pid}|${S.method}`; S.treeStep = S.step; S.treeSel = null; render(); } })));
+    }
+    wrap.append(el("div", { class: "grid2" }, left, right));
+    return wrap;
+  }
+
+  function select(options, value, onChange) {
+    const s = el("select", { onchange: (e) => onChange(e.target.value) });
+    for (const [v, label] of options) s.append(el("option", { value: v, text: label, selected: v === value }));
+    return s;
+  }
+  function stepNav(n, k, go) {
+    const range = el("input", { type: "range", min: 0, max: n, value: k, "aria-label": "步驟",
+      oninput: (e) => go(Number(e.target.value)) });
+    return el("span", { class: "controls", style: "margin:0" },
+      el("button", { class: "btn", text: "⏮", title: "第一步", onclick: () => go(0) }),
+      el("button", { class: "btn", text: "◀", title: "上一步", disabled: k <= 0, onclick: () => go(Math.max(0, k - 1)) }),
+      range,
+      el("button", { class: "btn", text: "▶", title: "下一步", disabled: k >= n, onclick: () => go(Math.min(n, k + 1)) }),
+      el("button", { class: "btn", text: "⏭", title: "最終狀態", onclick: () => go(n) }),
+      el("span", { class: "secondary tnum", text: k >= n ? `結束（共 ${n} 步）` : `第 ${k + 1} / ${n} 步` }));
+  }
+
+  // ---------------------------------------------------------------- live
+  function liveReplay() {
+    const L = S.live;
+    const wrap = el("div", {});
+    const methods = DATA.meta.methods.map((m) => m.label);
+    if (!methods.includes(S.method)) S.method = methods.find((m) => m.includes("puct")) || methods[0];
+    const split = el("select", {}, el("option", { value: "eval", text: "評估集" }), el("option", { value: "train", text: "訓練集" }));
+    const idx = el("input", { type: "number", min: 0, value: L ? L.index : 0, style: "width:72px", "aria-label": "題號" });
+    const sims = el("input", { type: "number", min: 0, value: L && L.sims != null ? L.sims : "", placeholder: "預設",
+      style: "width:72px", "aria-label": "模擬次數" });
+    wrap.append(el("div", { class: "controls" },
+      el("label", {}, "資料", split), el("label", {}, "題號", idx),
+      el("button", { class: "btn primary", text: "載入題目", disabled: S.busy, onclick: async () => {
+        await busy(async () => {
+          const r = await api("/api/new", { split: split.value, index: Number(idx.value) });
+          S.live = { session: r.session, index: Number(idx.value), split: split.value, steps: [], current: r.state,
+                     pending: null, done: r.state.done, outcome: r.state.outcome, sims: null };
+        });
+      } }),
+      el("label", {}, "方法", select(DATA.meta.methods.map((m) => [m.label, methodTitle(m.label)]), S.method, (v) => { S.method = v; render(); })),
+      el("label", {}, "模擬次數", sims)));
+    if (S.error) wrap.append(el("p", { class: "error", text: S.error }));
+    if (!L) {
+      wrap.append(el("div", { class: "card empty", text: "選擇資料集與題號後按「載入題目」，再逐步讓 Laya + MCTS 搜尋，或自己點選候選動作。" }));
+      return wrap;
+    }
+    const doSearch = () => busy(async () => {
+      const body = { session: L.session, method: S.method };
+      if (sims.value !== "") body.simulations = Number(sims.value);
+      L.sims = sims.value === "" ? null : Number(sims.value);
+      const r = await api("/api/search", body);
+      L.pending = r.step; L.pendingMethod = S.method;
+    });
+    const doAct = (i) => busy(async () => {
+      const r = await api("/api/act", { session: L.session, index: i });
+      const base = L.pending || { render: L.current.render, text: L.current.text, simulations: 0, nn_value: null, root_value: null,
+        actions: L.current.actions.map((t) => ({ text: t, prior: null, policy: null, visits: 0, q: null })) };
+      L.steps.push({ ...base, chosen: i, selected: base.selected ?? i, method: L.pending ? L.pendingMethod : "手動" });
+      L.pending = null; L.current = r.state; L.done = r.state.done; L.outcome = r.state.outcome;
+    });
+    const auto = () => busy(async () => {
+      let guard = 0;
+      while (!L.done && guard++ < 200) {
+        const body = { session: L.session, method: S.method };
+        if (sims.value !== "") body.simulations = Number(sims.value);
+        const s = await api("/api/search", body);
+        const r = await api("/api/act", { session: L.session, index: s.step.selected });
+        L.steps.push({ ...s.step, chosen: s.step.selected, method: S.method });
+        L.current = r.state; L.done = r.state.done; L.outcome = r.state.outcome; L.pending = null;
+        render();
+      }
+    });
+    wrap.append(el("div", { class: "controls" },
+      el("button", { class: "btn primary", text: "搜尋這一步", disabled: S.busy || L.done, onclick: doSearch }),
+      el("button", { class: "btn", text: "執行搜尋建議", disabled: S.busy || L.done || !L.pending, onclick: () => doAct(L.pending.selected) }),
+      el("button", { class: "btn", text: "自動下完", disabled: S.busy || L.done, onclick: auto }),
+      el("button", { class: "btn", text: "同題比較（所有方法）", disabled: S.busy, onclick: () => busy(async () => {
+        const r = await api("/api/compare", { session: L.session });
+        const pid = `live-${L.split}-${L.index}`;
+        if (!DATA.problems.find((p) => p.id === pid)) DATA.problems.push({ id: pid, render: r.problem.render, text: r.problem.text });
+        DATA.traces[pid] = r.traces; S.cmpPid = pid; S.tab = "compare";
+      }) }),
+      S.busy ? el("span", { class: "muted", text: "計算中…" }) : null));
+    const left = el("div", { class: "card" },
+      el("h2", { text: L.done ? "最終狀態" : `目前狀態（已走 ${L.steps.length} 步）` }),
+      L.done ? el("div", { style: "margin-bottom:8px" }, outcomeBadge(L.outcome)) : null,
+      renderState(L.current.render),
+      ["text", "textworld"].includes(L.current.render.kind) ? null :
+        el("details", {}, el("summary", { class: "muted", text: "Laya 看到的狀態文字" }), el("pre", { class: "statetext", text: L.current.text })),
+      L.steps.length ? el("ol", { class: "history" }, L.steps.map((s) => el("li", { text: `${s.actions[s.chosen].text}（${s.method}）` }))) : null);
+    let right;
+    if (L.done) right = el("div", { class: "card" }, el("h2", { text: "結果" }), outcomeBadge(L.outcome));
+    else if (L.pending) {
+      right = candidatesCard(L.pending, { title: `候選動作（${L.pendingMethod}）`, onPick: doAct });
+      if (L.pending.tree) right.append(el("p", {}, el("button", { class: "btn", text: "在搜尋樹中查看", onclick: () => {
+        S.tab = "tree"; S.treeSrc = "live|pending"; S.treeStep = 0; S.treeSel = null; render(); } })));
+    } else {
+      right = el("div", { class: "card" }, el("h2", { text: "候選動作" }),
+        el("p", { class: "hint", text: "按「搜尋這一步」看 Laya 先驗與 MCTS 結果，或直接點選動作自己下。" }),
+        el("table", { class: "cands" }, el("tbody", {}, L.current.actions.map((t, i) =>
+          el("tr", { class: "live", onclick: () => doAct(i) }, el("td", { class: "act", text: t }))))));
+    }
+    wrap.append(el("div", { class: "grid2" }, left, right));
+    return wrap;
+  }
+  async function busy(fn) {
+    S.busy = true; S.error = null; render();
+    try { await fn(); } catch (e) { S.error = String(e.message || e); }
+    S.busy = false; render();
+  }
+
+  // ---------------------------------------------------------------- tree
+  function treeSources() {
+    const out = [];
+    for (const p of DATA.problems) for (const [m, t] of Object.entries(DATA.traces[p.id] || {}))
+      if (t.steps.some((s) => s.tree)) out.push({ key: `${p.id}|${m}`, label: `${problemLabel(p, DATA.problems.indexOf(p))} · ${m}`, steps: t.steps });
+    if (S.live) {
+      const steps = S.live.steps.filter((s) => s.tree);
+      if (steps.length) out.push({ key: "live|history", label: "即時對局（已下的步）", steps });
+      if (S.live.pending && S.live.pending.tree) out.push({ key: "live|pending", label: "即時對局（目前這步）", steps: [S.live.pending] });
+    }
+    return out;
+  }
+
+  function treeView() {
+    const srcs = treeSources();
+    if (!srcs.length) return el("div", { class: "card empty", text: "沒有搜尋樹資料（只有使用 Laya 的搜尋方法會記錄樹）。" });
+    const src = srcs.find((s) => s.key === S.treeSrc) || srcs[0];
+    S.treeSrc = src.key;
+    const withTree = src.steps.map((s, i) => [i, s]).filter(([, s]) => s.tree);
+    if (!withTree.some(([i]) => i === S.treeStep)) S.treeStep = withTree[0][0];
+    const step = src.steps[S.treeStep];
+    const wrap = el("div", {});
+    wrap.append(el("div", { class: "controls" },
+      el("label", {}, "對局", select(srcs.map((s) => [s.key, s.label]), src.key, (v) => { S.treeSrc = v; S.treeStep = 0; S.treeSel = null; render(); })),
+      el("label", {}, "步驟", select(withTree.map(([i]) => [String(i), `第 ${i + 1} 步`]), String(S.treeStep), (v) => { S.treeStep = Number(v); S.treeSel = null; render(); }))));
+    wrap.append(el("div", { class: "legend" },
+      el("span", { class: "key" }, el("span", { class: "sw", style: `background:${qColor(1)}` }), "Q 高（對選擇者有利）"),
+      el("span", { class: "key" }, el("span", { class: "sw", style: `background:${qColor(0)}` }), "Q ≈ 0"),
+      el("span", { class: "key" }, el("span", { class: "sw", style: `background:${qColor(-1)}` }), "Q 低"),
+      el("span", { class: "key", text: "圓的大小 = 拜訪次數；線的粗細 = 拜訪次數；◆ = 終局（綠成功、紅失敗）" })));
+    const details = el("div", { class: "card details" });
+    const tree = step.tree;
+    const svgBox = treeSvg(tree, step, (node, path) => { S.treeSel = path; fillDetails(details, node, path); });
+    wrap.append(el("div", { class: "grid2", style: "grid-template-columns: minmax(320px, 8fr) minmax(260px, 4fr)" },
+      el("div", {}, el("div", { class: "tree-wrap" }, svgBox),
+        el("p", { class: "muted", text: `共 ${tree.size} 個節點（只顯示被拜訪過的節點，每層最多 8 個子節點）` })), details));
+    const sel = S.treeSel ? findPath(tree, S.treeSel) : tree;
+    fillDetails(details, sel || tree, S.treeSel || []);
+    return wrap;
+  }
+  function findPath(tree, path) {
+    let n = tree;
+    for (const i of path) { n = n.children[i]; if (!n) return null; }
+    return n;
+  }
+  function fillDetails(box, node, path) {
+    box.replaceChildren(el("h2", { text: path.length ? "選取的節點" : "根節點（目前狀態）" }));
+    const actions = [];
+    let n = window.__treeRoot;
+    for (const i of path) { n = n.children[i]; actions.push(n.a); }
+    const dl = el("dl", {});
+    const add = (k, v) => { dl.append(el("dt", { text: k }), el("dd", { class: "tnum", text: v })); };
+    if (actions.length) add("動作路徑", actions.join(" → "));
+    add("拜訪次數", String(node.n));
+    if (node.p != null && path.length) add("先驗 P", pct(node.p));
+    if (node.q != null) add("Q（對選擇者）", fmt(node.q));
+    if (node.v != null) add("Laya 價值 V（對行動者）", fmt(node.v));
+    if (node.t) add("終局", `${node.ok ? "成功" : "失敗"}（價值 ${fmt(node.tv)}）`);
+    if (node.hidden) add("未顯示的子節點", String(node.hidden));
+    box.append(dl);
+    if (node.s) box.append(el("pre", { class: "statetext", text: node.s }));
+  }
+
+  function treeSvg(tree, step, onSelect) {
+    window.__treeRoot = tree;
+    let leaf = 0, maxDepth = 0;
+    const maxN = Math.max(1, tree.n);
+    const nodes = [];
+    (function lay(n, depth, path) {
+      n._d = depth; n._path = path; maxDepth = Math.max(maxDepth, depth);
+      if (!n.children.length) { n._y = leaf++; } else {
+        n.children.forEach((c, i) => lay(c, depth + 1, path.concat(i)));
+        n._y = (n.children[0]._y + n.children[n.children.length - 1]._y) / 2;
+      }
+      nodes.push(n);
+    })(tree, 0, []);
+    const dx = 170, dy = 34, padX = 24, padY = 22;
+    const W = padX * 2 + maxDepth * dx + 220, H = padY * 2 + Math.max(1, leaf - 1) * dy + 10;
+    const X = (n) => padX + n._d * dx, Y = (n) => padY + n._y * dy;
+    const svg = sv("svg", { viewBox: `0 0 ${W} ${H}`, width: W, height: H, role: "img", "aria-label": "MCTS 搜尋樹" });
+    const chosenText = step.actions[step.chosen] ? step.actions[step.chosen].text : null;
+    for (const n of nodes) for (const c of n.children) {
+      const w = 1 + 5 * Math.sqrt(c.n / maxN);
+      const onChosen = n === tree && c.a === chosenText;
+      svg.append(sv("path", { d: `M${X(n)},${Y(n)} C${X(n) + dx / 2},${Y(n)} ${X(c) - dx / 2},${Y(c)} ${X(c)},${Y(c)}`,
+        fill: "none", stroke: onChosen ? cssVar("--text-secondary") : cssVar("--axis"), "stroke-width": w, "stroke-linecap": "round" }));
+    }
+    for (const n of nodes) {
+      const r = 4 + 10 * Math.sqrt(n.n / maxN);
+      const g = sv("g", { class: "node", tabindex: 0, role: "button", "aria-label": `${n.a || "根"}，拜訪 ${n.n}` });
+      if (n.t) {
+        const s = r + 2;
+        g.append(sv("rect", { x: X(n) - s, y: Y(n) - s, width: 2 * s, height: 2 * s, transform: `rotate(45 ${X(n)} ${Y(n)})`,
+          fill: n.ok ? cssVar("--good") : cssVar("--critical"), stroke: cssVar("--surface-1"), "stroke-width": 2 }));
+      } else {
+        g.append(sv("circle", { cx: X(n), cy: Y(n), r, fill: qColor(n.q), stroke: cssVar("--surface-1"), "stroke-width": 2 }));
+      }
+      g.append(sv("circle", { class: "hit", cx: X(n), cy: Y(n), r: Math.max(12, r + 4), fill: "transparent" }));
+      if (n.a) g.append(sv("text", { x: X(n) + r + 6, y: Y(n) - r - 2, text: n.a.length > 24 ? n.a.slice(0, 23) + "…" : n.a }));
+      const pick = () => onSelect(n, n._path);
+      g.addEventListener("click", pick);
+      g.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(); } });
+      g.addEventListener("pointermove", (ev) => showTip(ev, n.a || "根節點", [
+        { value: String(n.n), label: "拜訪" }, { value: fmt(n.q), label: "Q" },
+        ...(n.p != null && n.a ? [{ value: pct(n.p), label: "先驗" }] : []),
+        ...(n.t ? [{ value: n.ok ? "成功" : "失敗", label: "終局" }] : [])]));
+      g.addEventListener("pointerleave", hideTip);
+      svg.append(g);
+    }
+    return svg;
+  }
+
+  // ---------------------------------------------------------------- compare
+  function compareView() {
+    if (!DATA.problems.length) return el("div", { class: "card empty", text: MODE === "live" ? "在「對局回放」載入題目後按「同題比較」。" : "沒有對局資料。" });
+    if (!DATA.problems.find((p) => p.id === S.cmpPid)) S.cmpPid = DATA.problems[0].id;
+    const traces = DATA.traces[S.cmpPid] || {};
+    const p = DATA.problems.find((x) => x.id === S.cmpPid);
+    const wrap = el("div", {});
+    wrap.append(el("div", { class: "controls" },
+      el("label", {}, "題目", select(DATA.problems.map((x, i) => [x.id, problemLabel(x, i)]), S.cmpPid, (v) => { S.cmpPid = v; render(); }))));
+    const methods = Object.keys(traces);
+    const maxR = Math.max(0.0001, ...methods.map((m) => traces[m].outcome.reward || 0));
+    const tbody = el("tbody");
+    for (const m of methods) {
+      const t = traces[m];
+      const bar = el("div", { class: "bar", style: `width:${Math.max(0.5, 100 * (t.outcome.reward || 0) / maxR)}%;height:10px;background:${methodColor(m)}` });
+      bar.addEventListener("pointermove", (ev) => showTip(ev, methodTitle(m), [{ color: methodColor(m), value: fmt(t.outcome.reward), label: "reward" },
+        { value: String(t.outcome.moves), label: "步數" }]));
+      bar.addEventListener("pointerleave", hideTip);
+      tbody.append(el("tr", {},
+        el("td", {}, el("span", { class: "legend", style: "margin:0" }, el("span", { class: "key" },
+          el("span", { class: "sw", style: `background:${methodColor(m)}` }), methodTitle(m)))),
+        el("td", {}, badge(t.outcome.success, t.outcome.success ? "成功" : "失敗")),
+        el("td", { class: "num", text: fmt(t.outcome.reward) }),
+        el("td", { style: "width:18%" }, bar),
+        el("td", { class: "num", text: t.outcome.moves }),
+        el("td", { class: "path", text: t.steps.map((s) => s.actions[s.chosen].text).join(" → ") }),
+        el("td", {}, el("button", { class: "btn", text: "回放", onclick: () => { S.tab = "replay"; S.pid = S.cmpPid; S.method = m; S.step = 0;
+          if (MODE === "live") S.tab = "replay-static"; render(); } }))));
+    }
+    wrap.append(el("div", { class: "stack" },
+      el("div", { class: "card" }, el("h2", { text: "題目" }), renderState(p.render)),
+      el("div", { class: "card" }, el("h2", { text: "各方法在同一題的表現" }),
+        el("p", { class: "hint", text: "teacher 是精確解題器（參考上限）；均勻先驗與隨機 rollout 是不使用 Laya 的基準。" }),
+        el("table", { class: "data" }, el("thead", {}, el("tr", {},
+          ["方法", "結果", "reward", "", "步數", "走法", ""].map((h, i) => el("th", { class: i === 2 || i === 4 ? "num" : null, text: h })))), tbody))));
+    return wrap;
+  }
+
+  // ---------------------------------------------------------------- curves
+  function curvesView() {
+    const C = DATA.curves;
+    if (!C || !C.points.length) return el("div", { class: "card empty", text: "沒有學習曲線資料（需要實驗目錄裡的 metrics.jsonl）。" });
+    const labels = [...new Set(C.points.map((p) => p.label))];
+    const mk = (metric) => labels.map((l) => ({ label: l, color: methodColor(l),
+      values: C.xs.map((x) => { const p = C.points.find((q) => q.x === x && q.label === l); return p ? p[metric] : null; }) }));
+    const refs = (metric) => C.baselines.map((b) => ({ label: b.label, value: b[metric] }));
+    const wrap = el("div", {});
+    wrap.append(el("div", { class: "controls" }, el("label", {},
+      el("input", { type: "checkbox", checked: S.curvesTable, onchange: (e) => { S.curvesTable = e.target.checked; render(); } }), "以表格顯示")));
+    if (S.curvesTable) { wrap.append(curvesTable(C, labels)); return wrap; }
+    const charts = el("div", { class: "charts" });
+    charts.append(lineChart({ title: "評估 reward", subtitle: "各評估方法在保留題目上的平均 reward；水平線是不使用 Laya 的基準", xs: C.xs,
+      series: mk("reward"), refs: refs("reward"), y: [0, 1] }));
+    charts.append(lineChart({ title: "評估成功率", subtitle: "解出的比例", xs: C.xs, series: mk("success"), refs: refs("success"), y: [0, 1], pct: true }));
+    if (C.train.length) {
+      const tx = C.train.map((t) => `${t.iteration}:${t.stage}`);
+      charts.append(lineChart({ title: "訓練損失（交叉熵）", subtitle: "policy 與 value 的 soft cross-entropy", xs: tx, series: [
+        { label: "policy", color: "var(--series-1)", values: C.train.map((t) => t.policy_ce) },
+        { label: "value", color: "var(--series-2)", values: C.train.map((t) => t.value_ce) }] }));
+      charts.append(lineChart({ title: "保留資料上的 policy top-1", subtitle: "Laya 的首選是否落在目標分佈的最佳動作上", xs: tx,
+        series: [{ label: "top-1", color: "var(--series-1)", values: C.train.map((t) => t.heldout_policy_top1) }], y: [0, 1], pct: true }));
+    }
+    wrap.append(charts);
+    return wrap;
+  }
+  function curvesTable(C, labels) {
+    const t = el("table", { class: "data" });
+    t.append(el("thead", {}, el("tr", {}, el("th", { text: "階段" }), labels.flatMap((l) => [
+      el("th", { class: "num", text: `${l} reward` }), el("th", { class: "num", text: `${l} 成功率` })]))));
+    const tb = el("tbody");
+    for (const x of C.xs) tb.append(el("tr", {}, el("td", { text: stageLabel(x) }), labels.flatMap((l) => {
+      const p = C.points.find((q) => q.x === x && q.label === l);
+      return [el("td", { class: "num", text: p ? fmt(p.reward) : "–" }), el("td", { class: "num", text: p ? pct(p.success) : "–" })];
+    })));
+    for (const b of C.baselines) tb.append(el("tr", {}, el("td", { text: `基準：${b.label}` }),
+      labels.flatMap((l, i) => i === 0 ? [el("td", { class: "num", text: fmt(b.reward) }), el("td", { class: "num", text: pct(b.success) })]
+        : [el("td", {}), el("td", {})])));
+    t.append(tb);
+    return el("div", { class: "card" }, t);
+  }
+
+  function lineChart(o) {
+    const W = 560, H = 280, m = { l: 44, r: 72, t: 12, b: 34 };
+    const iw = W - m.l - m.r, ih = H - m.t - m.b;
+    const vals = o.series.flatMap((s) => s.values).concat((o.refs || []).map((r) => r.value)).filter((v) => v != null);
+    let [y0, y1] = o.y || [Math.min(0, ...vals), Math.max(...vals)];
+    if (!o.y) { const pad = (y1 - y0) * 0.1 || 0.1; y1 += pad; }
+    const X = (i) => m.l + (o.xs.length === 1 ? iw / 2 : (i * iw) / (o.xs.length - 1));
+    const Y = (v) => m.t + ih - ((v - y0) / (y1 - y0)) * ih;
+    const svg = sv("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": o.title });
+    const ticks = 5;
+    for (let k = 0; k <= ticks; k++) {
+      const v = y0 + ((y1 - y0) * k) / ticks;
+      svg.append(sv("line", { class: k === 0 ? "axis" : "gridline", x1: m.l, x2: m.l + iw, y1: Y(v), y2: Y(v) }));
+      svg.append(sv("text", { x: m.l - 6, y: Y(v) + 4, "text-anchor": "end", class: "tnum", text: o.pct ? `${Math.round(v * 100)}%` : v.toFixed(2) }));
+    }
+    const step = Math.ceil(o.xs.length / 8);
+    o.xs.forEach((x, i) => { if (i % step === 0 || i === o.xs.length - 1)
+      svg.append(sv("text", { x: X(i), y: H - 12, "text-anchor": "middle", text: stageLabel(x) })); });
+    for (const r of o.refs || []) {
+      if (r.value == null) continue;
+      svg.append(sv("line", { x1: m.l, x2: m.l + iw, y1: Y(r.value), y2: Y(r.value), stroke: cssVar("--text-muted"), "stroke-width": 1 }));
+    }
+    const ends = [];
+    for (const s of o.series) {
+      const pts = s.values.map((v, i) => (v == null ? null : [X(i), Y(v)])).filter(Boolean);
+      if (!pts.length) continue;
+      svg.append(sv("polyline", { points: pts.map((p) => p.join(",")).join(" "), fill: "none", stroke: s.color, "stroke-width": 2,
+        "stroke-linejoin": "round", "stroke-linecap": "round" }));
+      const last = pts[pts.length - 1];
+      svg.append(sv("circle", { cx: last[0], cy: last[1], r: 4, fill: s.color, stroke: cssVar("--surface-1"), "stroke-width": 2 }));
+      ends.push({ s, y: last[1], x: last[0] });
+    }
+    // Direct end labels only when they separate; converging lines fall back to legend + tooltip.
+    ends.sort((a, b) => a.y - b.y);
+    const separated = ends.every((e, i) => i === 0 || e.y - ends[i - 1].y >= 14);
+    if (o.series.length <= 4 && separated) for (const e of ends)
+      svg.append(sv("text", { class: "dlabel", x: e.x + 8, y: e.y + 4, text: e.s.label }));
+    // crosshair + one tooltip listing every series at that x
+    const cross = sv("line", { y1: m.t, y2: m.t + ih, stroke: cssVar("--axis"), "stroke-width": 1, visibility: "hidden" });
+    svg.append(cross);
+    svg.append(sv("rect", { x: m.l, y: m.t, width: iw, height: ih, fill: "transparent",
+      onpointermove: (ev) => {
+        const rect = svg.getBoundingClientRect();
+        const px = ((ev.clientX - rect.left) / rect.width) * W;
+        let i = o.xs.length === 1 ? 0 : Math.round(((px - m.l) / iw) * (o.xs.length - 1));
+        i = Math.max(0, Math.min(o.xs.length - 1, i));
+        cross.setAttribute("x1", X(i)); cross.setAttribute("x2", X(i)); cross.setAttribute("visibility", "visible");
+        showTip(ev, stageLabel(o.xs[i]), o.series.map((s) => ({ color: s.color, label: s.label,
+          value: s.values[i] == null ? "–" : o.pct ? pct(s.values[i]) : fmt(s.values[i]) })).concat(
+          (o.refs || []).filter((r) => r.value != null).map((r) => ({ color: cssVar("--text-muted"), label: `基準 ${r.label}`,
+            value: o.pct ? pct(r.value) : fmt(r.value) }))));
+      },
+      onpointerleave: () => { cross.setAttribute("visibility", "hidden"); hideTip(); } }));
+    const refs = (o.refs || []).filter((r) => r.value != null);
+    const legend = o.series.length >= 2 || refs.length ? el("div", { class: "legend" }, o.series.map((s) =>
+      el("span", { class: "key" }, el("span", { class: "ln", style: `background:${s.color}` }), s.label)),
+      refs.map((r) => el("span", { class: "key" }, el("span", { class: "ln", style: "background:var(--text-muted);height:1px" }),
+        `基準 ${r.label}（${o.pct ? pct(r.value) : fmt(r.value)}）`))) : null;
+    return el("div", { class: "card chart" }, el("h2", { text: o.title }), o.subtitle ? el("p", { class: "hint", text: o.subtitle }) : null, legend, svg);
+  }
+
+  // ---------------------------------------------------------------- shell
+  const TABS = [["replay", "對局回放"], ["tree", "搜尋樹"], ["compare", "同題比較"], ["curves", "學習曲線"]];
+  function render() {
+    hideTip();
+    const meta = DATA.meta || {};
+    const head = el("header", { class: "top" },
+      el("h1", { text: "Laya × MCTS 搜尋視覺化" }),
+      el("span", { class: "sub", text: [meta.name, meta.env, MODE === "live" ? "即時模式" : (DATA.generated ? `產生於 ${DATA.generated}` : "")].filter(Boolean).join(" · ") }),
+      el("span", { class: "spacer" }),
+      el("button", { class: "btn", text: "切換深 / 淺色", onclick: () => {
+        const cur = document.documentElement.getAttribute("data-theme");
+        const dark = cur ? cur === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+        document.documentElement.setAttribute("data-theme", dark ? "light" : "dark"); render(); } }));
+    const tabs = el("nav", { class: "tabs", role: "tablist" }, TABS.map(([k, label]) => el("button", {
+      role: "tab", "aria-selected": String(S.tab === k || (k === "replay" && S.tab === "replay-static")), text: label,
+      onclick: () => { S.tab = k; render(); } })));
+    let body;
+    if (S.tab === "replay") body = MODE === "live" ? liveReplay() : staticReplay();
+    else if (S.tab === "replay-static") body = staticReplay();
+    else if (S.tab === "tree") body = treeView();
+    else if (S.tab === "compare") body = compareView();
+    else body = curvesView();
+    const foot = el("p", { class: "muted", style: "margin-top:16px", text: meta.checkpoint ? `checkpoint：${meta.checkpoint}` : "" });
+    app.replaceChildren(head, tabs, body, foot);
+  }
+
+  async function init() {
+    if (MODE === "live") {
+      try {
+        const r = await api("/api/state");
+        DATA = { meta: r.meta, problems: [], traces: {}, curves: r.curves };
+      } catch (e) { S.error = String(e.message || e); }
+    }
+    render();
+  }
+  window.addEventListener("keydown", (e) => {
+    if (S.tab !== "replay" || MODE === "live" || e.target.tagName === "INPUT" || e.target.tagName === "SELECT") return;
+    const t = DATA.traces[S.pid] && DATA.traces[S.pid][S.method];
+    if (!t) return;
+    if (e.key === "ArrowRight") { S.step = Math.min(t.steps.length, S.step + 1); render(); }
+    if (e.key === "ArrowLeft") { S.step = Math.max(0, S.step - 1); render(); }
+  });
+  init();
+})();
+</script>
+</body>
+</html>

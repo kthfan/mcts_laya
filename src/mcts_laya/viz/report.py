@@ -48,6 +48,19 @@ def build_report(ctx: VizContext, n_problems: int = 4, methods: Optional[List[st
     return data
 
 
+def read_report_data(path: str) -> Dict[str, Any]:
+    """The data embedded in a report written by `write_report`."""
+    html = Path(path).read_text()
+    start = html.index("window.VIZ_DATA = ") + len("window.VIZ_DATA = ")
+    end = html.index(";\n</script>", start)
+    return json.loads(html[start:end].replace("<\\/", "</"))
+
+
+def rerender(path: str, out: Optional[str] = None) -> str:
+    """Re-wrap an existing report's data in the current front end (no search is re-run)."""
+    return write_report(out or path, read_report_data(path))
+
+
 def write_report(path: str, data: Dict[str, Any]) -> str:
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     Path(path).write_text(render_html(data, "static"))

@@ -252,7 +252,7 @@
       el("h2", { text: atEnd ? "最終狀態" : `第 ${S.step + 1} 步之前的狀態` }),
       atEnd ? el("div", { style: "margin-bottom:8px" }, outcomeBadge(trace.outcome)) : null,
       renderState(cur.render),
-      cur.render && cur.render.kind !== "text" ? el("details", {}, el("summary", { class: "muted", text: "Laya 看到的狀態文字" }),
+      cur.render && !["text", "textworld"].includes(cur.render.kind) ? el("details", {}, el("summary", { class: "muted", text: "Laya 看到的狀態文字" }),
         el("pre", { class: "statetext", text: cur.text })) : null);
     let right;
     if (atEnd) {
@@ -352,7 +352,8 @@
       el("h2", { text: L.done ? "最終狀態" : `目前狀態（已走 ${L.steps.length} 步）` }),
       L.done ? el("div", { style: "margin-bottom:8px" }, outcomeBadge(L.outcome)) : null,
       renderState(L.current.render),
-      el("details", {}, el("summary", { class: "muted", text: "Laya 看到的狀態文字" }), el("pre", { class: "statetext", text: L.current.text })),
+      ["text", "textworld"].includes(L.current.render.kind) ? null :
+        el("details", {}, el("summary", { class: "muted", text: "Laya 看到的狀態文字" }), el("pre", { class: "statetext", text: L.current.text })),
       L.steps.length ? el("ol", { class: "history" }, L.steps.map((s) => el("li", { text: `${s.actions[s.chosen].text}（${s.method}）` }))) : null);
     let right;
     if (L.done) right = el("div", { class: "card" }, el("h2", { text: "結果" }), outcomeBadge(L.outcome));

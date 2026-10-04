@@ -74,6 +74,16 @@ def test_report_html_embeds_data(ctx):
     assert "</script>" not in html.split("window.VIZ_DATA = ", 1)[1].split(";\n</script>", 1)[0]
 
 
+def test_report_roundtrip(tmp_path):
+    from mcts_laya.viz.report import read_report_data, rerender, write_report
+
+    data = {"meta": {"methods": [], "name": "x</script>y"}, "problems": [], "traces": {}, "curves": None}
+    p = write_report(str(tmp_path / "r.html"), data)
+    assert read_report_data(p) == data
+    rerender(p)
+    assert read_report_data(p) == data
+
+
 def test_live_api_flow(ctx):
     app = LiveApp(ctx)
     r = app.new({"split": "eval", "index": 1})

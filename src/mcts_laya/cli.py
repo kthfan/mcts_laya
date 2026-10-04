@@ -44,8 +44,12 @@ def _viz_context(args):
 
 
 def _cmd_viz(args) -> None:
-    from .viz.report import build_report, write_report
+    from .viz.report import build_report, rerender, write_report
 
+    if args.rerender:
+        for path in args.rerender:
+            print(rerender(path))
+        return
     ctx = _viz_context(args)
     data = build_report(ctx, n_problems=args.problems, methods=args.methods or None, max_tree_nodes=args.max_tree_nodes)
     out = args.out or (str(ctx.run_dir / "viz.html") if ctx.run_dir else "viz.html")
@@ -127,8 +131,11 @@ def main(argv=None) -> None:
                    help="override config values, e.g. --set iterations=2 search.params.num_simulations=8")
     r.set_defaults(func=_cmd_run)
 
-    def viz_source(p):
+    def viz_source(p, rerender=False):
         src = p.add_mutually_exclusive_group(required=True)
+        if rerender:
+            src.add_argument("--rerender", nargs="+", metavar="HTML",
+                             help="re-wrap existing reports in the current front end (no search re-run)")
         src.add_argument("--run", help="experiment output dir (uses its config, metrics and final checkpoint)")
         src.add_argument("--config", help="experiment YAML (no learning curves)")
         p.add_argument("--set", nargs="*", default=[], metavar="KEY=VALUE")
@@ -136,7 +143,7 @@ def main(argv=None) -> None:
         p.add_argument("--device", default=None)
 
     v = sub.add_parser("viz", help="static HTML report: replays, search trees, comparisons, learning curves")
-    viz_source(v)
+    viz_source(v, rerender=True)
     v.add_argument("--problems", type=int, default=4)
     v.add_argument("--methods", nargs="*", default=[], help="method labels (default: all eval searches, baselines, teacher)")
     v.add_argument("--max-tree-nodes", type=int, default=250)
