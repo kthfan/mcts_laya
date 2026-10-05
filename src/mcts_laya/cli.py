@@ -28,7 +28,7 @@ def _cmd_tw_games(args) -> None:
     from .envs.textworld_games import LEVELS, generate_pool
 
     for level in args.level:
-        d = generate_pool(args.out, level, args.train, args.eval, workers=args.workers, seed=args.seed)
+        d = generate_pool(args.out, level, args.train, args.eval, workers=args.workers or min(8, args.cpus_used or 8), seed=args.seed)
         import json
 
         m = json.loads((d / "manifest.json").read_text())
@@ -98,6 +98,8 @@ def _cmd_bench(args) -> None:
 def main(argv=None) -> None:
     p = argparse.ArgumentParser(prog="mcts-laya")
     p.add_argument("-v", "--verbose", action="store_true")
+    p.add_argument("--cpus", default=None, metavar="N",
+                   help="CPU cores to use (default: $MCTS_LAYA_CPUS, else half of the machine; 0 = no limit)")
     sub = p.add_subparsers(dest="cmd", required=True)
 
     d = sub.add_parser("download", help="download Laya checkpoints from the Hugging Face Hub")
@@ -122,7 +124,7 @@ def main(argv=None) -> None:
     g.add_argument("--out", default="data/textworld")
     g.add_argument("--train", type=int, default=200)
     g.add_argument("--eval", type=int, default=50)
-    g.add_argument("--workers", type=int, default=4)
+    g.add_argument("--workers", type=int, default=None, help="parallel compilers (default: the CPU limit, at most 8)")
     g.add_argument("--seed", type=int, default=0)
     g.set_defaults(func=_cmd_tw_games)
 
@@ -170,6 +172,9 @@ def main(argv=None) -> None:
     args = p.parse_args(argv)
     logging.basicConfig(level=logging.INFO if args.verbose else logging.WARNING,
                         format="%(asctime)s %(levelname)s %(message)s", stream=sys.stderr)
+    from .runtime import limit_cpus
+
+    args.cpus_used = limit_cpus(args.cpus)
     args.func(args)
 
 

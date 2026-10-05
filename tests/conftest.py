@@ -1,5 +1,9 @@
 import pytest
 
+from mcts_laya.runtime import limit_cpus
+
+limit_cpus()  # same CPU budget as the CLI ($MCTS_LAYA_CPUS, default half of the cores)
+
 
 @pytest.fixture(scope="session")
 def tiny_checkpoint(tmp_path_factory):

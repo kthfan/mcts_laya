@@ -86,6 +86,7 @@ cat runs/ablation/smoke/L2-goal/control-s0/summary.md
 
 - 腳本可以續跑：已完成的 run（目錄裡有 `done.json`）會跳過，中斷後重下同一行指令即可。中斷中的 run 會從頭開始。
 - 長時間執行建議包在 `tmux` 或 `nohup ... &` 裡。
+- CPU：預設只用一半的核心（TextWorld 重播、tokenizer、torch 執行緒都包含在內）。可以用 `--cpus N` 調整（例如 `run_ablation.py ... --cpus 6`），`--cpus 0` 代表不限制。
 - 進度：`tail -f runs/ablation/selfplay_textworld/L2-goal/<變體>-s<seed>/run.log`，或打開同目錄的 `summary.md`（每輪更新）。
 
 ## 5. 彙整與判讀
