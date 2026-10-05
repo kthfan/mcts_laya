@@ -84,9 +84,10 @@ cat runs/ablation/smoke/L2-goal/control-s0/summary.md
     --variants control <最好的變體> --seeds 0 1 2
 ```
 
-- **同時跑多個實驗（建議）**：單一實驗是一條序列的 CPU 流程（TextWorld 引擎重播 + 搜尋迴圈），GPU 大部分時間在等它，使用率只有個位數 %。用 `--jobs N` 同時跑 N 個實驗、共用同一張 GPU，每個實驗分到各自的一組 CPU 核心，總吞吐量接近 N 倍。每個實驗約占 6–10 GB 顯存：H100 80 GB 可以先試 `--jobs 6`，用 `nvidia-smi` 確認顯存和使用率後再調整（上限大約是 CPU 核心數，以及顯存 ÷ 10 GB）。例如：
+- **平行對局（自動開啟）**：模型在 GPU 上時，每個實驗會自動啟動「CPU 核心數 − 1」個（最多 32 個）actor 程序，同時進行多局 self-play 與評估。每個 actor 自己處理 TextWorld 引擎、搜尋樹和 tokenization，主程序只把所有 actor 的葉節點請求合併成一批送進 GPU（AlphaZero 的做法）。`summary.md` 的 Self-play 表格會多出三欄：`workers`；`rows_per_batch`（每次 GPU 呼叫的列數）；`model_busy`（GPU 呼叫占總時間的比例，接近 1 代表再加 actor 也不會更快）。可以用 `--extra parallel.workers=N` 指定 actor 數量，`parallel.workers=0` 改回單局循序執行。每個 actor 約占 0.5–0.8 GB 記憶體（RAM）。
+- **同時跑多個實驗**：`--jobs N` 同時跑 N 個實驗、共用同一張 GPU，每個實驗分到各自的一組 CPU 核心（每個實驗的 actor 數量也跟著變成「分到的核心數 − 1」）。有了平行對局後，單一實驗已經能用滿所有核心，`--jobs` 主要用來讓訓練階段（只用 GPU）和其他實驗的對局重疊。建議先用 `--jobs 2`。每個實驗約占 6–10 GB 顯存：H100 80 GB 最多可以跑約 6 個，用 `nvidia-smi` 確認顯存和使用率後再調整（上限大約是 CPU 核心數，以及顯存 ÷ 10 GB）。例如：
   ```bash
-  .venv/bin/python scripts/run_ablation.py configs/ablation/selfplay_textworld.yaml --only L2-goal --seeds 0 --jobs 6
+  .venv/bin/python scripts/run_ablation.py configs/ablation/selfplay_textworld.yaml --only L2-goal --seeds 0 --jobs 2
   ```
 - 腳本可以續跑：已完成的 run（目錄裡有 `done.json`）會跳過，中斷後重下同一行指令即可。中斷中的 run 會從頭開始。
 - 長時間執行建議包在 `tmux` 或 `nohup ... &` 裡。

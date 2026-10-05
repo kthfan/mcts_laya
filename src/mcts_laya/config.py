@@ -90,6 +90,17 @@ class EvalSection:
 
 
 @dataclass
+class ParallelSection:
+    """Many episodes at once (mcts_laya.selfplay.parallel): actor processes + batched model calls."""
+
+    # actor processes for self-play and evaluation; "auto" = one per spare CPU core (max 32) when
+    # the model is on a GPU, 0 (one episode at a time, in-process) on the CPU
+    workers: Any = "auto"
+    max_wait_ms: float = 2.0  # how long a model call waits for more actors' requests
+    cache_size: int = 50_000  # per-actor evaluation cache
+
+
+@dataclass
 class GateSection:
     enabled: bool = False
     metric: str = ""  # "<label>.<metric>", e.g. "mcts.reward"
@@ -123,6 +134,7 @@ class ExperimentConfig:
     train: TrainSection = field(default_factory=TrainSection)
     eval: EvalSection = field(default_factory=EvalSection)
     gate: GateSection = field(default_factory=GateSection)
+    parallel: ParallelSection = field(default_factory=ParallelSection)
     milestone: MilestoneSection = field(default_factory=MilestoneSection)
 
 

@@ -154,9 +154,9 @@ class TextWorldEnv(SingleAgentEnvironment):
         remember_commands: Sequence[str] = ("examine cookbook",),
         history_len: int = 6,
         show_visited: bool = True,
-        max_open_games: int = 64,
+        max_open_games: int = 16,
         runners_per_game: int = 4,
-        obs_cache_size: int = 50_000,
+        obs_cache_size: int = 20_000,
     ):
         self.level = level
         self.level_dir = Path(game_dir) / level

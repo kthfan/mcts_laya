@@ -3,6 +3,10 @@
 `Agent.predict_batch` requires every state in a batch to share one question set, but every leaf
 of a search tree has its own candidate actions, so this evaluator builds the rows itself (with
 Laya's own `build_sequence`) and runs them through the agent's forward pass in shared batches.
+
+The work is split so the parallel actors (`mcts_laya.selfplay.parallel`) can encode rows in their
+own processes: `encode_rows` (tokenisation, CPU) -> `evaluate_encoded` (forward pass and
+temperatures, where the model lives).
 """
 
 from __future__ import annotations
@@ -34,6 +38,28 @@ def load_agent(checkpoint: str, device: Optional[str] = None, subfolder: Optiona
     return agent
 
 
+def encode_rows(tok, env: Environment, state, actions, max_len: int, head_max_len: int,
+                rng: Optional[random.Random] = None) -> tuple:
+    """The policy and value rows of one state: (policy item, value item, option order or None, #actions).
+
+    With `rng`, the options are shown in a random order (`order[slot] = action index`).
+    """
+    text = env.state_text(state)
+    texts = [env.action_text(state, a) for a in actions]
+    order = None
+    if rng is not None:
+        order = list(range(len(texts)))
+        rng.shuffle(order)
+    pq = policy_question(env.policy_instruction, texts, order)
+    vq = value_question(env.value_instruction, env.value_criteria)
+    return (
+        encode_question(tok, text, pq, max_len, head_max_len),
+        encode_question(tok, text, vq, max_len, head_max_len),
+        order,
+        len(texts),
+    )
+
+
 @EVALUATORS.register("laya")
 class LayaEvaluator(Evaluator):
     def __init__(
@@ -54,6 +80,7 @@ class LayaEvaluator(Evaluator):
         self._cache: "OrderedDict[Any, EvalResult]" = OrderedDict()
         self.rows_evaluated = 0
         self.cache_hits = 0
+        self.version = 0  # bumped whenever the model changes (clear_cache); remote caches follow it
 
     @classmethod
     def from_checkpoint(cls, checkpoint: str, device: Optional[str] = None, subfolder: Optional[str] = None,
@@ -72,26 +99,20 @@ class LayaEvaluator(Evaluator):
 
     def clear_cache(self) -> None:
         self._cache.clear()
+        self.version += 1
+
+    def encoder_spec(self) -> dict:
+        """What a remote process needs to call `encode_rows` exactly like this evaluator."""
+        return {"tok": self.agent.tok, "max_len": self.max_len, "head_max_len": self.head_max_len,
+                "option_order": self.option_order}
 
     def _temperature(self, qtype: int, k: int) -> float:
         a = self.agent
         return float(a.temperature_by_options.get(temp_bucket(qtype, k), a.temperature[qtype]))
 
     def _rows(self, env: Environment, state, actions) -> tuple:
-        text = env.state_text(state)
-        texts = [env.action_text(state, a) for a in actions]
-        order = None
-        if self.option_order == "random":
-            order = list(range(len(texts)))
-            self.rng.shuffle(order)
-        pq = policy_question(env.policy_instruction, texts, order)
-        vq = value_question(env.value_instruction, env.value_criteria)
-        tok = self.agent.tok
-        return (
-            encode_question(tok, text, pq, self.max_len, self.head_max_len),
-            encode_question(tok, text, vq, self.max_len, self.head_max_len),
-            order,
-        )
+        rng = self.rng if self.option_order == "random" else None
+        return encode_rows(self.agent.tok, env, state, actions, self.max_len, self.head_max_len, rng)
 
     @torch.no_grad()
     def _forward(self, items: List[dict]) -> List[np.ndarray]:
@@ -110,7 +131,7 @@ class LayaEvaluator(Evaluator):
 
     def evaluate(self, env: Environment, states: Sequence[Any], actions: Sequence[List[Any]]) -> List[EvalResult]:
         results: List[Optional[EvalResult]] = [None] * len(states)
-        pending, items, orders = [], [], []
+        pending, rows = [], []
         for i, (s, a) in enumerate(zip(states, actions)):
             key = (env.name, env.state_key(s))
             hit = self._cache.get(key)
@@ -119,28 +140,33 @@ class LayaEvaluator(Evaluator):
                 self.cache_hits += 1
                 results[i] = hit
                 continue
-            p_item, v_item, order = self._rows(env, s, a)
-            pending.append((i, key, len(a)))
-            items.extend([p_item, v_item])
-            orders.append(order)
-        if items:
-            logits = self._forward(items)
-            for j, (i, key, k) in enumerate(pending):
-                pl, vl = logits[2 * j][:k], logits[2 * j + 1][:2]
-                t_p = self._temperature(QTYPES["choice"], k) * self.prior_temperature
-                z = pl / t_p
-                p = np.exp(z - z.max())
-                p /= p.sum()
-                if orders[j] is not None:  # slot order -> action order
-                    unperm = np.empty_like(p)
-                    unperm[np.asarray(orders[j])] = p
-                    p = unperm
-                zv = vl / self._temperature(QTYPES["noul"], 2)
-                pv = np.exp(zv - zv.max())
-                p_true = float(pv[1] / pv.sum())
-                res = EvalResult(p, 2.0 * p_true - 1.0)
-                results[i] = res
-                self._cache[key] = res
-                if len(self._cache) > self.cache_size:
-                    self._cache.popitem(last=False)
+            pending.append((i, key))
+            rows.append(self._rows(env, s, a))
+        for (i, key), res in zip(pending, self.evaluate_encoded(rows)):
+            results[i] = res
+            self._cache[key] = res
+            if len(self._cache) > self.cache_size:
+                self._cache.popitem(last=False)
         return results  # type: ignore[return-value]
+
+    def evaluate_encoded(self, rows: Sequence[tuple]) -> List[EvalResult]:
+        """Forward pass for rows from `encode_rows` (no cache)."""
+        if not rows:
+            return []
+        logits = self._forward([it for p_item, v_item, _, _ in rows for it in (p_item, v_item)])
+        out = []
+        for j, (_, _, order, k) in enumerate(rows):
+            pl, vl = logits[2 * j][:k], logits[2 * j + 1][:2]
+            t_p = self._temperature(QTYPES["choice"], k) * self.prior_temperature
+            z = pl / t_p
+            p = np.exp(z - z.max())
+            p /= p.sum()
+            if order is not None:  # slot order -> action order
+                unperm = np.empty_like(p)
+                unperm[np.asarray(order)] = p
+                p = unperm
+            zv = vl / self._temperature(QTYPES["noul"], 2)
+            pv = np.exp(zv - zv.max())
+            p_true = float(pv[1] / pv.sum())
+            out.append(EvalResult(p, 2.0 * p_true - 1.0))
+        return out

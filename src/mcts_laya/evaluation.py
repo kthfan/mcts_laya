@@ -25,13 +25,17 @@ def evaluate_searcher(env: Environment, searcher: Searcher, problems: Sequence[A
         bar.update(1)
         bar.set_postfix(success=float(np.mean([e.success for e in episodes])))
     bar.close()
+    return summarize_episodes(episodes, time.time() - t0)
+
+
+def summarize_episodes(episodes, seconds: float) -> Dict[str, float]:
     return {
         "success": float(np.mean([e.success for e in episodes])),
         # mean outcome mapped to [0, 1]; for single-agent envs this is the mean reward
         "reward": float(np.mean([(e.final_value + 1.0) / 2.0 for e in episodes])),
         "moves": float(np.mean([e.length for e in episodes])),
-        "seconds": time.time() - t0,
-        "problems": len(problems),
+        "seconds": seconds,
+        "problems": len(episodes),
     }
 
 

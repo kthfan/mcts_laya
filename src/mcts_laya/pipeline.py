@@ -5,6 +5,10 @@
         self-play with search  ->  replay buffer  ->  train Laya  ->  calibrate  ->  evaluate
         (optional gate: keep the new weights only if the gated metric did not drop)
 
+With `parallel.workers > 0` (the default on a GPU) self-play and evaluation episodes are played by
+actor processes that share one batched model (`mcts_laya.selfplay.parallel`); teacher data,
+training and calibration stay in this process.
+
 Every stage writes JSON lines to `<output_dir>/metrics.jsonl`; `summary.md` is rewritten after each
 iteration with the learning curve and the Phase 0 milestone checks.
 """
@@ -24,11 +28,13 @@ import yaml
 
 from . import progress
 from .config import EvalSearch, ExperimentConfig, config_to_dict
-from .evaluation import evaluate_searcher, format_table
+from .evaluation import evaluate_searcher, format_table, summarize_episodes
 from .evaluators.base import Evaluator
 from .evaluators.laya_evaluator import LayaEvaluator, load_agent
 from .registry import ENVIRONMENTS, EVALUATORS, SEARCHERS, TEACHERS
-from .selfplay.actor import episode_to_samples, play_episode
+from .runtime import available_cpus
+from .selfplay.actor import SelfPlayConfig, episode_to_samples, play_episode
+from .selfplay.parallel import ActorPool, episode_task, resolve_workers, search_spec
 from .selfplay.targets import policy_weights, relabel_with_teacher, update_best_moves
 from .training.sample import ReplayBuffer, save_samples
 from .training.trainer import LayaTrainer
@@ -61,6 +67,9 @@ class AlphaZeroLoop:
                                        prior_temperature=e.prior_temperature, option_order=e.option_order,
                                        seed=cfg.seed)
         self.trainer = LayaTrainer(self.agent, cfg.train.config)
+        device = str(next(self.agent.model.parameters()).device)
+        self.workers = resolve_workers(cfg.parallel.workers, device, available_cpus())
+        self._actors: Optional[ActorPool] = None
         self.replay = ReplayBuffer(cfg.train.replay_capacity)
         eval_rng = random.Random(cfg.eval.seed)
         self.eval_problems = self.env.sample_problems(eval_rng, cfg.eval.problems, split="eval")
@@ -79,6 +88,22 @@ class AlphaZeroLoop:
             self._relabel_teacher = TEACHERS.build(cfg.env.name, self.env)
 
     # --- helpers --------------------------------------------------------------------------
+    def actors(self) -> Optional[ActorPool]:
+        """The actor processes (started on first use), or None for in-process episodes."""
+        if self.workers <= 0:
+            return None
+        if self._actors is None:
+            p = self.cfg.parallel
+            log.info("starting %d actor processes", self.workers)
+            self._actors = ActorPool(self.cfg.env.name, self.cfg.env.params, self.evaluator, self.workers,
+                                     max_wait_ms=p.max_wait_ms, cache_size=p.cache_size)
+        return self._actors
+
+    def close(self) -> None:
+        if self._actors is not None:
+            self._actors.close()
+            self._actors = None
+
     def log(self, record: Dict[str, Any]) -> None:
         record = dict(record, time=time.time())
         self.history.append(record)
@@ -100,10 +125,19 @@ class AlphaZeroLoop:
     def evaluate(self, iteration: int, stage: str, specs: List[EvalSearch]) -> Dict[str, Dict[str, float]]:
         results = {}
         for spec in specs:
-            searcher = self._searcher(spec.name, self._eval_evaluator(spec), spec.params)
-            r = evaluate_searcher(self.env, searcher, self.eval_problems, seed=self.cfg.eval.seed,
-                                  max_moves=self.cfg.eval.max_moves,
-                                  desc=f"{self._tag(iteration)} eval {stage} {spec.label}")
+            desc = f"{self._tag(iteration)} eval {stage} {spec.label}"
+            pool = self.actors()
+            if pool is not None:
+                cfg = SelfPlayConfig(max_moves=self.cfg.eval.max_moves, add_noise=False, action_selection="search")
+                ss = search_spec(spec.name, spec.params, spec.evaluator, spec.evaluator_params)
+                tasks = [episode_task(ss, p, np.random.default_rng([self.cfg.eval.seed, i]).integers(2 ** 62), cfg)
+                         for i, p in enumerate(self.eval_problems)]
+                t0 = time.time()
+                r = summarize_episodes(pool.run(tasks, desc), time.time() - t0)
+            else:
+                searcher = self._searcher(spec.name, self._eval_evaluator(spec), spec.params)
+                r = evaluate_searcher(self.env, searcher, self.eval_problems, seed=self.cfg.eval.seed,
+                                      max_moves=self.cfg.eval.max_moves, desc=desc)
             results[spec.label] = r
             self.log({"kind": "eval", "iteration": iteration, "stage": stage, "label": spec.label, **r})
         return results
@@ -157,17 +191,27 @@ class AlphaZeroLoop:
 
     def self_play(self, iteration: int) -> None:
         sp = self.cfg.selfplay
-        searcher = self._searcher(self.cfg.search.name, self.evaluator, self.cfg.search.params)
         t0, rows0 = time.time(), self.evaluator.rows_evaluated
-        episodes = []
-        bar = progress.bar(sp.episodes_per_iteration, f"{self._tag(iteration)} self-play", "episodes")
-        for _ in range(sp.episodes_per_iteration):
-            episodes.append(play_episode(self.env, searcher, self.env.sample_problem(self.py_rng, "train"),
-                                         self.np_rng, sp.config))
-            bar.update(1)
-            bar.set_postfix(success=float(np.mean([e.success for e in episodes])),
-                            moves=float(np.mean([e.length for e in episodes])))
-        bar.close()
+        desc = f"{self._tag(iteration)} self-play"
+        pool = self.actors()
+        batches0, busy0 = (pool.batches, pool.model_seconds) if pool is not None else (0, 0.0)
+        if pool is not None:
+            spec = search_spec(self.cfg.search.name, self.cfg.search.params)
+            tasks = [episode_task(spec, self.env.sample_problem(self.py_rng, "train"),
+                                  self.np_rng.integers(2 ** 62), sp.config)
+                     for _ in range(sp.episodes_per_iteration)]
+            episodes = pool.run(tasks, desc)
+        else:
+            searcher = self._searcher(self.cfg.search.name, self.evaluator, self.cfg.search.params)
+            episodes = []
+            bar = progress.bar(sp.episodes_per_iteration, desc, "episodes")
+            for _ in range(sp.episodes_per_iteration):
+                episodes.append(play_episode(self.env, searcher, self.env.sample_problem(self.py_rng, "train"),
+                                             self.np_rng, sp.config))
+                bar.update(1)
+                bar.set_postfix(success=float(np.mean([e.success for e in episodes])),
+                                moves=float(np.mean([e.length for e in episodes])))
+            bar.close()
         update_best_moves(self.env, episodes, self.best_moves)
         weights = policy_weights(self.env, episodes, sp.policy_filter, self.best_moves,
                                  failed_weight=sp.config.failed_policy_weight,
@@ -187,7 +231,12 @@ class AlphaZeroLoop:
                   "policy_episodes": len(kept) if self._relabel_teacher is None else len(episodes),
                   "policy_moves": float(np.mean([e.length for e in kept])) if kept else None,
                   "samples": n_samples, "replay": len(self.replay), "seconds": dt,
-                  "rows_per_second": (self.evaluator.rows_evaluated - rows0) / max(dt, 1e-9)})
+                  "rows_per_second": (self.evaluator.rows_evaluated - rows0) / max(dt, 1e-9),
+                  "workers": self.workers,
+                  "rows_per_batch": ((self.evaluator.rows_evaluated - rows0) / max(pool.batches - batches0, 1)
+                                     if pool is not None else None),
+                  # share of the wall time the model was busy; near 1 = more actors will not help
+                  "model_busy": (pool.model_seconds - busy0) / max(dt, 1e-9) if pool is not None else None})
 
     def train(self, iteration: int) -> None:
         batch = self.replay.sample(self.cfg.train.samples_per_iteration, self.py_rng)
@@ -197,6 +246,12 @@ class AlphaZeroLoop:
 
     # --- driver ---------------------------------------------------------------------------
     def run(self) -> List[Dict[str, Any]]:
+        try:
+            return self._run()
+        finally:
+            self.close()
+
+    def _run(self) -> List[Dict[str, Any]]:
         cfg = self.cfg
         if cfg.eval.baselines:
             self.evaluate(0, "baseline", cfg.eval.baselines)
@@ -277,7 +332,8 @@ class AlphaZeroLoop:
         if sp:
             lines += ["## Self-play", "",
                       format_table(sp, ["iteration", "episodes", "success", "moves", "policy_episodes",
-                                        "policy_moves", "samples", "seconds", "rows_per_second"]), ""]
+                                        "policy_moves", "samples", "seconds", "rows_per_second", "workers",
+                                        "rows_per_batch", "model_busy"]), ""]
         tr = [r for r in self.history if r.get("kind") == "train"]
         if tr:
             cols = ["iteration", "stage", "samples", "policy_ce", "value_ce", "heldout_policy_top1",
