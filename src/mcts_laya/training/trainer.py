@@ -107,6 +107,14 @@ class LayaTrainer:
             groups.append({"params": enc, "lr": self.cfg.lr_encoder})
         return torch.optim.AdamW(groups, weight_decay=self.cfg.weight_decay)
 
+    def _grad_scaler(self):
+        """fp16 autocast (GPUs without bf16, e.g. T4 / V100) needs loss scaling; bf16 and fp32 do not."""
+        if getattr(self, "_scaler", None) is None:
+            dev = self.agent.device
+            enabled = bool(self.cfg.amp and dev.type == "cuda" and self.agent.dtype == torch.float16)
+            self._scaler = torch.amp.GradScaler("cuda", enabled=enabled) if enabled else _NoScaler()
+        return self._scaler
+
     def _autocast(self):
         dev = self.agent.device
         if self.cfg.amp and dev.type == "cuda":
@@ -173,10 +181,13 @@ class LayaTrainer:
                 batch = collate_items([items[start:start + cfg.batch_size]], self.agent.tok.pad_token_id)
                 parts = self._loss(batch)
                 opt.zero_grad(set_to_none=True)
-                parts["loss"].backward()
+                scaler = self._grad_scaler()
+                scaler.scale(parts["loss"]).backward()
                 if cfg.grad_clip:
+                    scaler.unscale_(opt)
                     torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.grad_clip)
-                opt.step()
+                scaler.step(opt)
+                scaler.update()
                 for k, v in parts.items():
                     totals[k] = totals.get(k, 0.0) + float(v.detach())
                 n_batches += 1
@@ -247,6 +258,22 @@ class LayaTrainer:
         with open(out / "rl_agent_config.json", "w") as f:
             json.dump(self.agent.cfg, f, indent=2)
         return str(out)
+
+
+class _NoScaler:
+    """Stand-in for GradScaler when no loss scaling is needed (CPU, bf16, fp32)."""
+
+    def scale(self, loss):
+        return loss
+
+    def unscale_(self, opt):
+        pass
+
+    def step(self, opt):
+        opt.step()
+
+    def update(self):
+        pass
 
 
 def _fit_temperature(rows) -> float:

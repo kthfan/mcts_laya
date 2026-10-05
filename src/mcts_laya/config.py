@@ -52,6 +52,14 @@ class TeacherConfig:
 class SelfPlaySection:
     episodes_per_iteration: int = 64
     config: SelfPlayConfig = field(default_factory=SelfPlayConfig)
+    # Which positions teach the policy (see mcts_laya.selfplay.targets):
+    # "success" (default) | "efficient" (A) | "none" (B, value only) | "all"
+    policy_filter: str = "success"
+    best_known_ratio: Optional[float] = 1.3  # efficient: moves <= ratio x own best on that problem
+    top_fraction: float = 0.5  # efficient: keep the top share of this iteration's successes by reward
+    # (D) DAgger: "teacher" relabels every visited state with the teacher's targets
+    relabel: str = "none"
+    relabel_value: str = "teacher"  # "teacher" or "outcome" (keep the self-play value target)
 
 
 @dataclass

@@ -1,0 +1,50 @@
+# Self-play ablation for TextWorld (run on a GPU): which self-play targets let the agent improve
+# beyond its warm start? See docs/gpu_experiments.md.
+#
+#   python scripts/run_ablation.py configs/ablation/selfplay_textworld.yaml            # everything
+#   python scripts/run_ablation.py configs/ablation/selfplay_textworld.yaml --only L2-goal --dry-run
+#   python scripts/summarize_ablation.py runs/ablation/selfplay_textworld
+#
+# Every run = <level base config> + <gpu overrides> + <variant overrides> + seed. All variants of a
+# level share the same warm-start data and the same evaluation games (eval.seed is fixed), so the
+# comparison between variants is paired.
+name: selfplay_textworld
+output_root: runs/ablation/selfplay_textworld
+seeds: [0, 1, 2]
+
+levels:                       # run in this order; later levels only if you have the budget
+  L2-goal: configs/textworld/l2-goal.yaml
+  L3-goal: configs/textworld/l3-goal.yaml
+  C1: configs/textworld/c1.yaml
+
+# GPU throughput settings applied to every run (16 GB card; see the doc for 24 GB+)
+gpu_overrides:
+  - model.device=cuda
+  - evaluator.max_rows=64
+  - search.params.batch_size=8
+  - train.config.batch_size=16
+  - save_half=true
+
+variants:
+  control:                    # current setting: imitate successful self-play games (16 simulations)
+    - selfplay.policy_filter=success
+  A-efficient:                # only games efficient relative to the agent's own record
+    - selfplay.policy_filter=efficient
+    - selfplay.best_known_ratio=1.3
+    - selfplay.top_fraction=0.5
+  B-value-only:               # self-play trains the value only
+    - selfplay.policy_filter=none
+  C-sims48:                   # stronger search during self-play (evaluation stays at 16)
+    - selfplay.policy_filter=success
+    - search.params.num_simulations=48
+  AC-efficient-sims48:
+    - selfplay.policy_filter=efficient
+    - selfplay.best_known_ratio=1.3
+    - selfplay.top_fraction=0.5
+    - search.params.num_simulations=48
+  BC-value-only-sims48:
+    - selfplay.policy_filter=none
+    - search.params.num_simulations=48
+  D-dagger:                   # teacher relabels visited states (imitation; upper-bound reference)
+    - selfplay.relabel=teacher
+    - selfplay.relabel_value=teacher

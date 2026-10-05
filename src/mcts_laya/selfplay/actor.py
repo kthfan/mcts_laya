@@ -81,11 +81,12 @@ def play_episode(env: Environment, searcher: Searcher, state: Any, rng: np.rando
 
 
 def episode_to_samples(env: Environment, ep: Episode, cfg: Optional[SelfPlayConfig] = None,
-                       meta: Optional[dict] = None) -> List[Sample]:
+                       meta: Optional[dict] = None, policy_weight: Optional[float] = None) -> List[Sample]:
+    """Training samples of one episode; `policy_weight` overrides the success-based default."""
     cfg = cfg or SelfPlayConfig()
     final_player = env.current_player(ep.final_state)
     out = []
-    pw = 1.0 if ep.success else cfg.failed_policy_weight
+    pw = policy_weight if policy_weight is not None else (1.0 if ep.success else cfg.failed_policy_weight)
     for rec in ep.steps:
         pol = np.asarray(rec.result.policy, dtype=np.float64)
         if cfg.policy_target_temperature != 1.0 and pol.sum() > 0:

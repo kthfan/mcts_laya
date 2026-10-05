@@ -36,6 +36,15 @@ scripts/setup_env.sh --download    # 再下載 laya-multilingual 權重到 model
 
 每個實驗會在 `output_dir` 寫出：`config.yaml`（完整設定）、`metrics.jsonl`（每個階段一筆紀錄）、`summary.md`（學習曲線、基準比較、Phase 0 里程碑檢查）、`teacher_samples.jsonl`，以及 `checkpoints/`（Laya 相容格式，可以直接 `laya.load`）。
 
+## GPU 實驗
+
+TextWorld self-play 消融（A：只學有效率的成功局、B：只訓練 value、C：更深的搜尋、D：DAgger 上限參考）的完整步驟見 [`docs/gpu_experiments.md`](docs/gpu_experiments.md)：
+
+```bash
+.venv/bin/python scripts/run_ablation.py configs/ablation/selfplay_textworld.yaml --only L2-goal --seeds 0
+.venv/bin/python scripts/summarize_ablation.py runs/ablation/selfplay_textworld
+```
+
 ## 視覺化
 
 ```bash

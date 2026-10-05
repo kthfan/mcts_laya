@@ -28,6 +28,7 @@ from .evaluators.base import Evaluator
 from .evaluators.laya_evaluator import LayaEvaluator, load_agent
 from .registry import ENVIRONMENTS, EVALUATORS, SEARCHERS, TEACHERS
 from .selfplay.actor import episode_to_samples, play_episode
+from .selfplay.targets import policy_weights, relabel_with_teacher, update_best_moves
 from .training.sample import ReplayBuffer, save_samples
 from .training.trainer import LayaTrainer
 
@@ -65,6 +66,16 @@ class AlphaZeroLoop:
         self.history: List[Dict[str, Any]] = []
         self.best_metric: Optional[float] = None
         self.best_state: Optional[dict] = None
+        self.best_moves: Dict[Any, int] = {}  # fewest moves the agent has solved each training problem in
+        self._relabel_teacher = None
+        from .selfplay.targets import POLICY_FILTERS
+
+        if cfg.selfplay.policy_filter not in POLICY_FILTERS:
+            raise ValueError(f"selfplay.policy_filter must be one of {POLICY_FILTERS}")
+        if cfg.selfplay.relabel not in ("none", "teacher"):
+            raise ValueError("selfplay.relabel must be 'none' or 'teacher'")
+        if cfg.selfplay.relabel == "teacher":
+            self._relabel_teacher = TEACHERS.build(cfg.env.name, self.env)
 
     # --- helpers --------------------------------------------------------------------------
     def log(self, record: Dict[str, Any]) -> None:
@@ -143,17 +154,26 @@ class AlphaZeroLoop:
         sp = self.cfg.selfplay
         searcher = self._searcher(self.cfg.search.name, self.evaluator, self.cfg.search.params)
         t0, rows0 = time.time(), self.evaluator.rows_evaluated
-        successes, lengths, n_samples = [], [], 0
-        for i in range(sp.episodes_per_iteration):
-            ep = play_episode(self.env, searcher, self.env.sample_problem(self.py_rng, "train"), self.np_rng, sp.config)
-            samples = episode_to_samples(self.env, ep, sp.config, meta={"iteration": iteration})
+        episodes = [play_episode(self.env, searcher, self.env.sample_problem(self.py_rng, "train"), self.np_rng,
+                                 sp.config) for _ in range(sp.episodes_per_iteration)]
+        update_best_moves(self.env, episodes, self.best_moves)
+        weights = policy_weights(self.env, episodes, sp.policy_filter, self.best_moves,
+                                 failed_weight=sp.config.failed_policy_weight,
+                                 best_known_ratio=sp.best_known_ratio, top_fraction=sp.top_fraction)
+        n_samples = 0
+        for ep, w in zip(episodes, weights):
+            samples = episode_to_samples(self.env, ep, sp.config, meta={"iteration": iteration}, policy_weight=w)
+            if self._relabel_teacher is not None:
+                samples = relabel_with_teacher(self.env, self._relabel_teacher, ep, samples, sp.relabel_value)
             self.replay.add(samples)
-            successes.append(ep.success)
-            lengths.append(ep.length)
             n_samples += len(samples)
         dt = time.time() - t0
-        self.log({"kind": "selfplay", "iteration": iteration, "episodes": sp.episodes_per_iteration,
-                  "success": float(np.mean(successes)), "moves": float(np.mean(lengths)),
+        kept = [ep for ep, w in zip(episodes, weights) if w > 0]
+        self.log({"kind": "selfplay", "iteration": iteration, "episodes": len(episodes),
+                  "success": float(np.mean([e.success for e in episodes])),
+                  "moves": float(np.mean([e.length for e in episodes])),
+                  "policy_episodes": len(kept) if self._relabel_teacher is None else len(episodes),
+                  "policy_moves": float(np.mean([e.length for e in kept])) if kept else None,
                   "samples": n_samples, "replay": len(self.replay), "seconds": dt,
                   "rows_per_second": (self.evaluator.rows_evaluated - rows0) / max(dt, 1e-9)})
 
@@ -188,6 +208,7 @@ class AlphaZeroLoop:
             self.write_summary()
         self._save(cfg.iterations, final=True)
         self.write_summary()
+        (self.out / "done.json").write_text(json.dumps({"finished": time.time(), "iterations": cfg.iterations}))
         return self.history
 
     # --- reporting ------------------------------------------------------------------------
@@ -243,8 +264,8 @@ class AlphaZeroLoop:
         sp = [r for r in self.history if r.get("kind") == "selfplay"]
         if sp:
             lines += ["## Self-play", "",
-                      format_table(sp, ["iteration", "episodes", "success", "moves", "samples", "seconds",
-                                        "rows_per_second"]), ""]
+                      format_table(sp, ["iteration", "episodes", "success", "moves", "policy_episodes",
+                                        "policy_moves", "samples", "seconds", "rows_per_second"]), ""]
         tr = [r for r in self.history if r.get("kind") == "train"]
         if tr:
             cols = ["iteration", "stage", "samples", "policy_ce", "value_ce", "heldout_policy_top1",

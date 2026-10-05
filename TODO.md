@@ -58,15 +58,17 @@
 - [x] L2-goal（只給目標）：gate、policy 目標溫度 0.25、保留全部 teacher 資料
   - warm start 後 PUCT16 reward 0.754（成功率 0.95，5.9 步）；self-play 3 輪全部被 gate 判定退步而還原（0.611 / 0.534 / 0.694）
   - 原因判斷：self-play 的成功局平均 8–10 步（最佳約 5 步），模仿它們等於學繞遠路
-  - 待與使用者討論下一步；L3-goal 已暫停
+  - 已實作 A（只學有效率的成功局）、B（self-play 只訓練 value）、C（self-play 48 次模擬）、D（DAgger，teacher 重新標註），
+    消融實驗交由使用者在 GPU 上執行：步驟見 `docs/gpu_experiments.md`，規格 `configs/ablation/selfplay_textworld.yaml`
+  - L3-goal、C1 的 CPU 實驗取消，改在 GPU 消融的第三階段進行
   - 第一次（沒有 gate，被工作程序重啟中斷）：warm start 後 greedy 0.85 / PUCT16 0.95，self-play 1 輪後掉到 0.60 / 0.65
   - 若加 gate 仍無改善，與使用者討論下一步（例如提高 self-play 模擬次數）
-- [ ] L3-goal（只給目標）
+- [ ] L3-goal（只給目標）：GPU 消融第三階段
 - [ ] 報告 `docs/phase1a_report.md`
 
 ### 1a.5 之後
 - [x] cooking 關卡（橋接）C1 / C2：保留 `examine cookbook`、食譜存成 Notes、teacher 先讀食譜；head 預算 512
-- [ ] C1 實驗（排在 L3-goal 之後）
+- [ ] C1 實驗：GPU 消融第三階段
 - [ ] 動作數 > 20：shortlist / 階層式 choice（ALFWorld 也需要）
 - [x] 部分可觀測的記憶：已造訪房間清單（看過的物件摘要尚未做）
 
@@ -79,6 +81,13 @@
 - [x] 即時模式：`mcts-laya serve`（出題、逐步搜尋、自己選步）
 - [x] TextWorld 地圖面板（`textworld.render.load_state`）
 - [ ] ALFWorld：文字版沿用；3D 畫面待 GPU
+
+## GPU 消融實驗（使用者執行）
+- [ ] 試跑（`--extra iterations=1`）並回報每輪時間
+- [ ] L2-goal：7 個變體 × seed 0
+- [ ] L2-goal：補 seed 1、2
+- [ ] L3-goal、C1：最好的變體 + control
+- [ ] 回傳 `ablation_results.tgz`，分析並決定下一步
 
 ## Phase 1b（ALFWorld）預備
 - [ ] 多 episode 並行、跨 episode 合併葉節點批次（GPU 吞吐量）
