@@ -7,7 +7,7 @@ textworld = pytest.importorskip("textworld")
 
 from mcts_laya.envs.textworld_env import TextWorldEnv, clean_feedback, clean_objective, clean_room  # noqa: E402
 from mcts_laya.envs.textworld_games import LEVELS, generate_pool, load_manifest  # noqa: E402
-from mcts_laya.registry import SEARCHERS  # noqa: E402
+from mcts_laya.registry import EVALUATORS, SEARCHERS  # noqa: E402
 from mcts_laya.selfplay import SelfPlayConfig, play_episode  # noqa: E402
 from mcts_laya.teachers import TextWorldTeacher  # noqa: E402
 
@@ -105,6 +105,22 @@ def test_search_plays_an_episode(env):
     ep = play_episode(env, searcher, env.sample_problem(random.Random(7)), np.random.default_rng(0),
                       SelfPlayConfig(add_noise=False, max_moves=env.max_steps))
     assert 1 <= ep.length <= env.max_steps
+
+
+def test_runner_pool_and_cache_do_not_change_results(tw_root):
+    """Several runners per game plus the observation cache must give exactly the single-runner states."""
+    def play(**kw):
+        env = TextWorldEnv(game_dir=tw_root, level="L1", **kw)
+        searcher = SEARCHERS.build("puct", env, EVALUATORS.build("uniform"), num_simulations=12, batch_size=4)
+        rng, nrng = random.Random(3), np.random.default_rng(3)
+        cfg = SelfPlayConfig(max_moves=10, add_noise=True)
+        eps = [play_episode(env, searcher, env.sample_problem(rng), nrng, cfg) for _ in range(3)]
+        return env, [[env.state_text(r.state) for r in ep.steps] + [ep.final_value] for ep in eps]
+
+    old_env, old = play(runners_per_game=1, obs_cache_size=0)
+    new_env, new = play()
+    assert new == old
+    assert new_env.replayed_steps < old_env.replayed_steps and new_env.cache_hits > 0
 
 
 def test_laya_evaluator_on_textworld(env, tiny_agent):

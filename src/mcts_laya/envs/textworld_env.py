@@ -6,6 +6,13 @@ Successors are produced by replaying the history on a per-game `GameRunner`: Tex
 z-machine state would desynchronise TextWorld's Python-side state tracking (which computes the
 admissible and oracle commands). The runner keeps its current history and only replays the
 missing suffix when the requested history extends it.
+
+Replays dominate the cost of a search (a reset plus one engine step per action, so ~50 ms per
+expansion mid-episode), so two things avoid them: each game keeps a few runners
+(`runners_per_game`), and a search moving between branches extends whichever runner is already
+parked on a prefix of the requested history; and observations are cached by (game, history)
+(`obs_cache_size`), which serves the nodes the next move's search expands again. Games are
+deterministic, so neither changes any result.
 """
 
 from __future__ import annotations
@@ -148,6 +155,8 @@ class TextWorldEnv(SingleAgentEnvironment):
         history_len: int = 6,
         show_visited: bool = True,
         max_open_games: int = 64,
+        runners_per_game: int = 4,
+        obs_cache_size: int = 50_000,
     ):
         self.level = level
         self.level_dir = Path(game_dir) / level
@@ -164,25 +173,61 @@ class TextWorldEnv(SingleAgentEnvironment):
         self.history_len = history_len
         self.show_visited = show_visited
         self.max_open_games = max_open_games
-        self._runners: "OrderedDict[str, GameRunner]" = OrderedDict()
+        self.runners_per_game = max(1, int(runners_per_game))
+        self.obs_cache_size = int(obs_cache_size)
+        self._runners: "OrderedDict[str, List[GameRunner]]" = OrderedDict()  # game -> runners, LRU first
+        self._obs_cache: "OrderedDict[Tuple[str, Tuple[str, ...]], Observation]" = OrderedDict()
+        self.cache_hits = 0  # diagnostics
         self._viz_runners: "OrderedDict[str, GameRunner]" = OrderedDict()
 
     # --- game access ------------------------------------------------------------------------
-    def _runner(self, game: str) -> GameRunner:
-        r = self._runners.get(game)
-        if r is None:
-            r = GameRunner(str(self.level_dir / game))
-            self._runners[game] = r
+    def _runner(self, game: str, history: Tuple[str, ...] = ()) -> GameRunner:
+        """The game's runner that needs the fewest replayed steps to reach `history`."""
+        pool = self._runners.get(game)
+        if pool is None:
+            pool = self._runners[game] = []
             if len(self._runners) > self.max_open_games:
-                _, old = self._runners.popitem(last=False)
-                old.close()
+                for old in self._runners.popitem(last=False)[1]:
+                    old.close()
         else:
             self._runners.move_to_end(game)
-        return r
+        best = None
+        for r in pool:
+            h = r.history
+            if h is not None and len(h) <= len(history) and history[: len(h)] == h:
+                if best is None or len(h) > len(best.history):
+                    best = r
+        if best is None:
+            if len(pool) < self.runners_per_game:
+                best = GameRunner(str(self.level_dir / game))
+                pool.append(best)
+            else:
+                best = pool[0]  # least recently used: it will reset
+        pool.remove(best)
+        pool.append(best)
+        return best
+
+    def _observe(self, game: str, history: Tuple[str, ...]) -> Observation:
+        key = (game, history)
+        obs = self._obs_cache.get(key)
+        if obs is not None:
+            self._obs_cache.move_to_end(key)
+            self.cache_hits += 1
+            return obs
+        obs = self._runner(game, history).observe(history)
+        if self.obs_cache_size > 0:
+            self._obs_cache[key] = obs
+            if len(self._obs_cache) > self.obs_cache_size:
+                self._obs_cache.popitem(last=False)
+        return obs
+
+    @property
+    def replayed_steps(self) -> int:
+        return sum(r.replayed_steps for pool in self._runners.values() for r in pool)
 
     def _state(self, game: str, history: Tuple[str, ...], visited: Tuple[str, ...] = (),
                notes: Tuple[Tuple[str, str], ...] = ()) -> TWState:
-        obs = self._runner(game).observe(history)
+        obs = self._observe(game, history)
         room = room_name(obs.description)
         if room and room not in visited:
             visited = visited + (room,)

@@ -84,6 +84,10 @@ cat runs/ablation/smoke/L2-goal/control-s0/summary.md
     --variants control <最好的變體> --seeds 0 1 2
 ```
 
+- **同時跑多個實驗（建議）**：單一實驗是一條序列的 CPU 流程（TextWorld 引擎重播 + 搜尋迴圈），GPU 大部分時間在等它，使用率只有個位數 %。用 `--jobs N` 同時跑 N 個實驗、共用同一張 GPU，每個實驗分到各自的一組 CPU 核心，總吞吐量接近 N 倍。每個實驗約占 6–10 GB 顯存：H100 80 GB 可以先試 `--jobs 6`，用 `nvidia-smi` 確認顯存和使用率後再調整（上限大約是 CPU 核心數，以及顯存 ÷ 10 GB）。例如：
+  ```bash
+  .venv/bin/python scripts/run_ablation.py configs/ablation/selfplay_textworld.yaml --only L2-goal --seeds 0 --jobs 6
+  ```
 - 腳本可以續跑：已完成的 run（目錄裡有 `done.json`）會跳過，中斷後重下同一行指令即可。中斷中的 run 會從頭開始。
 - 長時間執行建議包在 `tmux` 或 `nohup ... &` 裡。
 - CPU：預設使用所有核心。需要保留核心給其他工作時，可以用 `--cpus N` 限制（例如 `run_ablation.py ... --cpus 6`；TextWorld 重播、tokenizer、torch 執行緒都包含在內）。
