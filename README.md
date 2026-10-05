@@ -16,6 +16,8 @@ scripts/setup_env.sh --download    # 再下載 laya-multilingual 權重到 model
 .venv/bin/mcts-laya download --checkpoint multilingual english --out models/laya
 ```
 
+每個 checkpoint 放在自己的目錄：`models/laya/english`、`models/laya/multilingual`、`models/laya/typed-decisions`（`--checkpoint` 與設定檔的 `model.checkpoint` 都指向這一層）。舊版把 english 直接放在 `models/laya/` 底下；重新執行 `mcts-laya download --checkpoint english` 會把它搬到 `models/laya/english`，不會重新下載。
+
 權重從 `huggingface.co/convaiinnovations/laya` 下載，需要能連上 Hugging Face。連不上時，可以用微型的隨機初始化模型（磁碟格式與 Laya 完全相同）在 CPU 上開發與測試：
 
 ```bash

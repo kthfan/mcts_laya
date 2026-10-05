@@ -14,7 +14,7 @@ def _cmd_download(args) -> None:
     from .models.download import download_checkpoint
 
     for name in args.checkpoint:
-        print(download_checkpoint(name, args.out, revision=args.revision))
+        print(download_checkpoint(name, args.out, revision=args.revision, force=args.force))
 
 
 def _cmd_make_tiny(args) -> None:
@@ -103,8 +103,9 @@ def main(argv=None) -> None:
     d = sub.add_parser("download", help="download Laya checkpoints from the Hugging Face Hub")
     d.add_argument("--checkpoint", nargs="+", default=["multilingual"],
                    choices=["english", "multilingual", "typed-decisions"])
-    d.add_argument("--out", default="models/laya")
+    d.add_argument("--out", default="models/laya", help="each checkpoint goes to <out>/<name>")
     d.add_argument("--revision", default=None)
+    d.add_argument("--force", action="store_true", help="download again even if <out>/<name> exists")
     d.set_defaults(func=_cmd_download)
 
     t = sub.add_parser("make-tiny", help="build a tiny random Laya-compatible checkpoint (tests, CPU dev)")

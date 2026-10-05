@@ -7,7 +7,7 @@
 
 ### 0.1 環境建立
 - [x] Python 3.11 venv（uv）+ `laya==0.3.24`、torch 2.14、transformers 5.18、SymPy、pytest（`scripts/setup_env.sh`）
-- [x] `mcts-laya download`：已下載 `multilingual`（644 MB）與 `english`（804 MB）到 `models/laya/`
+- [x] `mcts-laya download`：已下載 `multilingual`（644 MB）與 `english`（804 MB）到 `models/laya/<name>/`（每個 checkpoint 一個目錄）
 - [x] `mcts-laya make-tiny`：離線用的微型 Laya 相容 checkpoint
 - [!] 推送到 GitHub：`kthfan/mcts_laya` 尚未授權給 Claude（403），所有 commit 目前只存在本地分支
 
