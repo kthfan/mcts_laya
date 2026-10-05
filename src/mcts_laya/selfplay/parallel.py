@@ -57,6 +57,7 @@ class RemoteEvaluator(Evaluator):
         self.cache_size = cache_size
         self.version: Optional[int] = None
         self._cache: "OrderedDict[Any, EvalResult]" = OrderedDict()
+        self.wait_seconds = 0.0  # time blocked on the main process's model calls
 
     def set_version(self, version: int) -> None:
         if version != self.version:
@@ -79,8 +80,10 @@ class RemoteEvaluator(Evaluator):
             rows.append(encode_rows(self.enc["tok"], env, s, a, self.enc["max_len"], self.enc["head_max_len"],
                                     self.rng))
         if rows:
+            t = time.perf_counter()
             self.conn.send(("eval", rows))
             kind, answer = self.conn.recv()
+            self.wait_seconds += time.perf_counter() - t
             if kind != "eval_result":
                 raise RuntimeError(f"expected eval_result, got {kind!r}")
             for (i, key), res in zip(pending, answer):
@@ -132,9 +135,11 @@ def _worker_main(conn, index: int, env_name: str, env_params: Dict[str, Any], en
                 ev = remote if spec["evaluator"] == "model" else EVALUATORS.build(
                     spec["evaluator"], **spec["evaluator_params"])
                 searchers[key] = SEARCHERS.build(spec["name"], env, ev, **spec["params"])
+            t, w = time.perf_counter(), remote.wait_seconds
             ep = play_episode(env, searchers[key], task["problem"], np.random.default_rng(task["seed"]),
                               task["config"])
-            conn.send(("done", task_id, _strip(ep)))
+            stats = {"seconds": time.perf_counter() - t, "wait": remote.wait_seconds - w}
+            conn.send(("done", task_id, _strip(ep), stats))
         except Exception:
             conn.send(("error", task_id, traceback.format_exc()))
 
@@ -150,6 +155,8 @@ class ActorPool:
         self.batches = 0
         self.rows = 0
         self.model_seconds = 0.0  # time the main process spent in model calls (vs waiting on actors)
+        self.actor_seconds = 0.0  # summed episode time over actors
+        self.actor_wait = 0.0  # ... of which blocked waiting for model results
         ctx = mp.get_context("spawn")  # the parent holds CUDA state; fork would not be safe
         encoder = evaluator.encoder_spec()
         self.conns, self.procs = [], []
@@ -201,6 +208,23 @@ class ActorPool:
         except (EOFError, ConnectionResetError):
             raise self._died(conn) from None
 
+    def snapshot(self) -> Dict[str, float]:
+        return {"batches": self.batches, "rows": self.rows, "model": self.model_seconds,
+                "actor": self.actor_seconds, "wait": self.actor_wait}
+
+    def stats_since(self, before: Dict[str, float], seconds: float) -> Dict[str, Any]:
+        """Throughput diagnostics for the log, relative to an earlier `snapshot()`."""
+        d = {k: v - before[k] for k, v in self.snapshot().items()}
+        return {
+            "workers": self.workers,
+            "rows_per_batch": d["rows"] / max(d["batches"], 1),
+            # share of the wall time the main process was in model calls; near 1 = model-bound
+            "model_busy": d["model"] / max(seconds, 1e-9),
+            "model_ms_per_batch": 1000 * d["model"] / max(d["batches"], 1),
+            # share of the actors' time spent waiting for model results (the rest: env + search)
+            "actor_wait": d["wait"] / max(d["actor"], 1e-9),
+        }
+
     def run(self, tasks: Sequence[Dict[str, Any]], desc: str = "episodes") -> List[Episode]:
         """Play every task; returns the episodes in task order."""
         results: List[Optional[Episode]] = [None] * len(tasks)
@@ -228,6 +252,8 @@ class ActorPool:
                         elif msg[0] == "done":
                             ep = msg[2]
                             results[msg[1]] = ep
+                            self.actor_seconds += msg[3]["seconds"]
+                            self.actor_wait += msg[3]["wait"]
                             del busy[c]
                             idle.append(c)
                             n_done += 1

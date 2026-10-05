@@ -47,7 +47,18 @@ def test_loop_runs_with_actors(tiny_checkpoint, tmp_path):
     records = [json.loads(l) for l in open(tmp_path / "metrics.jsonl")]
     sp = [r for r in records if r["kind"] == "selfplay"]
     assert sp and sp[0]["workers"] == 2 and sp[0]["episodes"] == 4 and sp[0]["rows_per_batch"] > 0
+    assert 0 <= sp[0]["actor_wait"] <= 1 and sp[0]["model_ms_per_batch"] > 0
     assert {r["label"] for r in records if r["kind"] == "eval"} >= {"greedy", "puct16", "uniform-puct16"}
+
+
+def test_restarted_run_starts_a_fresh_metrics_file(tiny_checkpoint, tmp_path):
+    (tmp_path / "metrics.jsonl").write_text('{"kind": "eval", "stage": "stale"}\n')
+    cfg = load_config("configs/phase0/algebra_tiny.yaml", [
+        f"output_dir={tmp_path}", f"model.checkpoint={tiny_checkpoint}", "iterations=0", "teacher.enabled=false",
+        "eval.problems=2", "eval.baselines=[]", "parallel.workers=0"])
+    AlphaZeroLoop(cfg).run()
+    assert "stale" not in (tmp_path / "metrics.jsonl").read_text()
+    assert "stale" in (tmp_path / "metrics.interrupted.jsonl").read_text()
 
 
 def test_resolve_workers():

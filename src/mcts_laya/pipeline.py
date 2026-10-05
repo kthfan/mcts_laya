@@ -49,6 +49,9 @@ class AlphaZeroLoop:
         self.out.mkdir(parents=True, exist_ok=True)
         with open(self.out / "config.yaml", "w") as f:
             yaml.safe_dump(config_to_dict(cfg), f, sort_keys=False, allow_unicode=True)
+        metrics = self.out / "metrics.jsonl"
+        if metrics.exists():  # a run always starts from scratch; keep an interrupted attempt aside
+            metrics.replace(self.out / "metrics.interrupted.jsonl")
         self.py_rng = random.Random(cfg.seed)
         self.np_rng = np.random.default_rng(cfg.seed)
         import torch
@@ -95,6 +98,12 @@ class AlphaZeroLoop:
         if self._actors is None:
             p = self.cfg.parallel
             log.info("starting %d actor processes", self.workers)
+            if not str(self.agent.device).startswith("cpu"):
+                import torch
+
+                # the actors own the CPU cores; with the model on a GPU this process only collates
+                # rows and launches kernels, and a wide CPU thread pool would just compete with them
+                torch.set_num_threads(min(torch.get_num_threads(), 2))
             self._actors = ActorPool(self.cfg.env.name, self.cfg.env.params, self.evaluator, self.workers,
                                      max_wait_ms=p.max_wait_ms, cache_size=p.cache_size)
         return self._actors
@@ -194,7 +203,7 @@ class AlphaZeroLoop:
         t0, rows0 = time.time(), self.evaluator.rows_evaluated
         desc = f"{self._tag(iteration)} self-play"
         pool = self.actors()
-        batches0, busy0 = (pool.batches, pool.model_seconds) if pool is not None else (0, 0.0)
+        before = pool.snapshot() if pool is not None else None
         if pool is not None:
             spec = search_spec(self.cfg.search.name, self.cfg.search.params)
             tasks = [episode_task(spec, self.env.sample_problem(self.py_rng, "train"),
@@ -232,11 +241,7 @@ class AlphaZeroLoop:
                   "policy_moves": float(np.mean([e.length for e in kept])) if kept else None,
                   "samples": n_samples, "replay": len(self.replay), "seconds": dt,
                   "rows_per_second": (self.evaluator.rows_evaluated - rows0) / max(dt, 1e-9),
-                  "workers": self.workers,
-                  "rows_per_batch": ((self.evaluator.rows_evaluated - rows0) / max(pool.batches - batches0, 1)
-                                     if pool is not None else None),
-                  # share of the wall time the model was busy; near 1 = more actors will not help
-                  "model_busy": (pool.model_seconds - busy0) / max(dt, 1e-9) if pool is not None else None})
+                  **(pool.stats_since(before, dt) if pool is not None else {"workers": 0})})
 
     def train(self, iteration: int) -> None:
         batch = self.replay.sample(self.cfg.train.samples_per_iteration, self.py_rng)
@@ -333,7 +338,8 @@ class AlphaZeroLoop:
             lines += ["## Self-play", "",
                       format_table(sp, ["iteration", "episodes", "success", "moves", "policy_episodes",
                                         "policy_moves", "samples", "seconds", "rows_per_second", "workers",
-                                        "rows_per_batch", "model_busy"]), ""]
+                                        "rows_per_batch", "model_busy", "model_ms_per_batch",
+                                        "actor_wait"]), ""]
         tr = [r for r in self.history if r.get("kind") == "train"]
         if tr:
             cols = ["iteration", "stage", "samples", "policy_ce", "value_ce", "heldout_policy_top1",
