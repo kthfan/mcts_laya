@@ -2,7 +2,7 @@ import pytest
 
 from mcts_laya.runtime import limit_cpus
 
-limit_cpus()  # same CPU budget as the CLI ($MCTS_LAYA_CPUS, default half of the cores)
+limit_cpus()  # same CPU budget as the CLI ($MCTS_LAYA_CPUS; unset = all cores)
 
 
 @pytest.fixture(scope="session")

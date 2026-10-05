@@ -9,7 +9,7 @@
 - [x] Python 3.11 venv（uv）+ `laya==0.3.24`、torch 2.14、transformers 5.18、SymPy、pytest（`scripts/setup_env.sh`）
 - [x] `mcts-laya download`：已下載 `multilingual`（644 MB）與 `english`（804 MB）到 `models/laya/<name>/`（每個 checkpoint 一個目錄）
 - [x] `mcts-laya make-tiny`：離線用的微型 Laya 相容 checkpoint
-- [x] CPU 使用上限：`--cpus N` / `MCTS_LAYA_CPUS`，預設一半核心（`src/mcts_laya/runtime.py`）
+- [x] CPU 使用上限：`--cpus N` / `MCTS_LAYA_CPUS`，預設不限制（使用所有核心）（`src/mcts_laya/runtime.py`）
 - [!] 推送到 GitHub：`kthfan/mcts_laya` 尚未授權給 Claude（403），所有 commit 目前只存在本地分支
 
 ### 0.2 模組化程式碼

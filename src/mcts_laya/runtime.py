@@ -1,6 +1,7 @@
-"""Keep the project from taking every CPU core of the machine.
+"""Optionally keep the project from taking every CPU core of the machine.
 
-`limit_cpus(n)` is called once at start-up (the CLI, the scripts and the test suite do it):
+`limit_cpus(n)` is called once at start-up (the CLI, the scripts and the test suite do it). With a
+limit set:
 
 * thread pools - torch intra-/inter-op threads, OpenMP / MKL / OpenBLAS, and the Rust thread pool
   of `tokenizers` - are sized to `n`;
@@ -8,9 +9,9 @@
   that, so TextWorld's game compiler and engines, and the runs started by `scripts/run_ablation.py`,
   stay inside the same cores.
 
-`n` comes from the argument, else the `MCTS_LAYA_CPUS` environment variable, else half of the cores
-available to the process. `0` or `all` means no limit. The chosen value is written back to
-`MCTS_LAYA_CPUS` so child processes use the same budget instead of halving it again.
+`n` comes from the argument, else the `MCTS_LAYA_CPUS` environment variable. Without either - the
+default - nothing is limited and every core is used; `0` or `all` also mean no limit. The chosen
+value is written back to `MCTS_LAYA_CPUS` so child processes use the same budget.
 """
 
 from __future__ import annotations
@@ -37,9 +38,7 @@ def resolve_cpus(value: Union[int, str, None] = None) -> Optional[int]:
     """Number of cores to use, or None for no limit."""
     if value is None:
         value = os.environ.get(ENV_VAR)
-    if value is None or str(value).strip() == "":
-        return max(1, available_cpus() // 2)
-    if str(value).strip().lower() in ("0", "all", "none"):
+    if value is None or str(value).strip().lower() in ("", "0", "all", "none"):
         return None
     n = int(value)
     if n < 0:
@@ -73,6 +72,6 @@ def limit_cpus(value: Union[int, str, None] = None) -> Optional[int]:
     except ImportError:
         pass
     if _applied != n:
-        log.info("CPU limit: %d of %d cores (set %s=0 or --cpus 0 for no limit)", n, os.cpu_count() or n, ENV_VAR)
+        log.info("CPU limit: %d of %d cores (from --cpus / %s)", n, os.cpu_count() or n, ENV_VAR)
     _applied = n
     return n

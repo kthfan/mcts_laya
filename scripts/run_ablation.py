@@ -46,7 +46,7 @@ def main(argv=None) -> int:
     p.add_argument("--dry-run", action="store_true", help="print the commands without running them")
     p.add_argument("--python", default=sys.executable)
     p.add_argument("--cpus", default=None, metavar="N",
-                   help="CPU cores for the runs (default: $MCTS_LAYA_CPUS, else half of the machine; 0 = no limit)")
+                   help="limit the CPU cores of the runs (default: $MCTS_LAYA_CPUS, else all cores; 0 = no limit)")
     args = p.parse_args(argv)
     sys.path.insert(0, str(ROOT / "src"))
     from mcts_laya.runtime import limit_cpus

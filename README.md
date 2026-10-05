@@ -18,7 +18,7 @@ scripts/setup_env.sh --download    # 再下載 laya-multilingual 權重到 model
 
 每個 checkpoint 放在自己的目錄：`models/laya/english`、`models/laya/multilingual`、`models/laya/typed-decisions`（`--checkpoint` 與設定檔的 `model.checkpoint` 都指向這一層）。舊版把 english 直接放在 `models/laya/` 底下；重新執行 `mcts-laya download --checkpoint english` 會把它搬到 `models/laya/english`，不會重新下載。
 
-**CPU 使用上限**：所有 `mcts-laya` 指令、`scripts/run_ablation.py` 與測試，預設只用機器一半的 CPU 核心。torch / BLAS / tokenizers 的執行緒數會跟著設定；在 Linux 上，程序（以及 TextWorld 引擎等子程序）還會被綁定在這幾個核心上。用 `--cpus N` 或環境變數 `MCTS_LAYA_CPUS=N` 調整，`0` 代表不限制：
+**CPU 使用上限**：預設使用所有 CPU 核心。若不想占滿本機，所有 `mcts-laya` 指令、`scripts/run_ablation.py` 與測試都可以用 `--cpus N` 或環境變數 `MCTS_LAYA_CPUS=N` 限制核心數（`0` 代表不限制）。設定後，torch / BLAS / tokenizers 的執行緒數會跟著調整；在 Linux 上，程序（以及 TextWorld 引擎等子程序）還會被綁定在這幾個核心上：
 
 ```bash
 .venv/bin/mcts-laya --cpus 4 run configs/phase0/countdown.yaml

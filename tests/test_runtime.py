@@ -16,7 +16,7 @@ PROBE = ("import json, os, mcts_laya.runtime as r, torch; n = r.limit_cpus({arg}
 
 def test_resolve(monkeypatch):
     monkeypatch.delenv("MCTS_LAYA_CPUS", raising=False)
-    assert resolve_cpus() == max(1, available_cpus() // 2)
+    assert resolve_cpus() is None  # default: all cores
     assert resolve_cpus(1) == 1
     assert resolve_cpus(10_000) == available_cpus()
     assert resolve_cpus("all") is None and resolve_cpus(0) is None
@@ -39,6 +39,10 @@ def test_limit_applies_threads_and_affinity():
         assert affinity == 1
 
 
-def test_env_value_is_reused_by_children_not_halved_again():
-    n = max(1, available_cpus() // 2)
-    assert _probe("None", {"MCTS_LAYA_CPUS": str(n)})[0] == n
+def test_env_value_is_used_and_default_is_unlimited():
+    assert _probe("None", {"MCTS_LAYA_CPUS": "1"})[0] == 1
+    env = {k: v for k, v in os.environ.items() if k != "MCTS_LAYA_CPUS"}
+    out = subprocess.run([sys.executable, "-c", PROBE.format(arg="None")], capture_output=True, text=True,
+                         env=env, check=True)
+    n, _, _, affinity = json.loads(out.stdout.strip().splitlines()[-1])
+    assert n is None and affinity in (None, available_cpus())

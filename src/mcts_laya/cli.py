@@ -99,7 +99,7 @@ def main(argv=None) -> None:
     p = argparse.ArgumentParser(prog="mcts-laya")
     p.add_argument("-v", "--verbose", action="store_true")
     p.add_argument("--cpus", default=None, metavar="N",
-                   help="CPU cores to use (default: $MCTS_LAYA_CPUS, else half of the machine; 0 = no limit)")
+                   help="limit the CPU cores used (default: $MCTS_LAYA_CPUS, else all cores; 0 = no limit)")
     sub = p.add_subparsers(dest="cmd", required=True)
 
     d = sub.add_parser("download", help="download Laya checkpoints from the Hugging Face Hub")
