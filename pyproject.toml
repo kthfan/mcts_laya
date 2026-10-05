@@ -16,6 +16,7 @@ dependencies = [
     "huggingface_hub",
     "numpy",
     "sympy>=1.12",
+    "tqdm>=4.60",
     "pyyaml",
 ]
 

@@ -20,6 +20,7 @@ import numpy as np
 import torch
 from laya.common import QTYPES, clamp_temperature, collate_items, proper_reward
 
+from .. import progress
 from ..laya_io import SequenceTooLong, encode_question, policy_question, value_question
 from .sample import Sample
 
@@ -157,7 +158,7 @@ class LayaTrainer:
             out["loss"] = out["loss"] + self.cfg.rl_weight * out["rl"]
         return out
 
-    def train(self, samples: Sequence[Sample], epochs: Optional[int] = None) -> Dict[str, float]:
+    def train(self, samples: Sequence[Sample], epochs: Optional[int] = None, desc: str = "train") -> Dict[str, float]:
         """Train on `samples`, keeping a held-out slice for temperature calibration."""
         cfg = self.cfg
         samples = list(samples)
@@ -171,8 +172,12 @@ class LayaTrainer:
         model.train()
         totals: Dict[str, float] = {}
         n_batches = 0
-        for _ in range(epochs if epochs is not None else cfg.epochs):
+        n_epochs = epochs if epochs is not None else cfg.epochs
+        bar = None
+        for _ in range(n_epochs):
             items = self.build_items(train)
+            if bar is None:
+                bar = progress.bar(n_epochs * -(-len(items) // cfg.batch_size), desc, "batches")
             # keep a sample's policy row next to its value row, but shuffle sample pairs
             pairs = [items[i:i + 2] for i in range(0, len(items), 2)]
             self.rng.shuffle(pairs)
@@ -191,6 +196,10 @@ class LayaTrainer:
                 for k, v in parts.items():
                     totals[k] = totals.get(k, 0.0) + float(v.detach())
                 n_batches += 1
+                bar.update(1)
+                bar.set_postfix(loss=totals["loss"] / n_batches)
+        if bar is not None:
+            bar.close()
         model.eval()
         metrics = {k: v / max(n_batches, 1) for k, v in totals.items()}
         metrics.update({"train_samples": len(train), "batches": n_batches})

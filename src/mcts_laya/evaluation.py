@@ -7,17 +7,24 @@ from typing import Any, Dict, List, Sequence
 
 import numpy as np
 
+from . import progress
 from .envs.base import Environment
 from .search.tree import Searcher
 from .selfplay.actor import SelfPlayConfig, play_episode
 
 
 def evaluate_searcher(env: Environment, searcher: Searcher, problems: Sequence[Any], seed: int = 0,
-                      max_moves: int = 50) -> Dict[str, float]:
+                      max_moves: int = 50, desc: str = "eval") -> Dict[str, float]:
     rng = np.random.default_rng(seed)
     cfg = SelfPlayConfig(max_moves=max_moves, add_noise=False, action_selection="search")
     t0 = time.time()
-    episodes = [play_episode(env, searcher, p, rng, cfg) for p in problems]
+    episodes = []
+    bar = progress.bar(len(problems), desc, "problems")
+    for p in problems:
+        episodes.append(play_episode(env, searcher, p, rng, cfg))
+        bar.update(1)
+        bar.set_postfix(success=float(np.mean([e.success for e in episodes])))
+    bar.close()
     return {
         "success": float(np.mean([e.success for e in episodes])),
         # mean outcome mapped to [0, 1]; for single-agent envs this is the mean reward

@@ -67,8 +67,11 @@ def _cmd_run(args) -> None:
     from .pipeline import AlphaZeroLoop
 
     cfg = load_config(args.config, args.set)
+    from .progress import logging_compatible
+
     loop = AlphaZeroLoop(cfg)
-    loop.run()
+    with logging_compatible():
+        loop.run()
     print((loop.out / "summary.md").read_text())
 
 
@@ -98,6 +101,9 @@ def _cmd_bench(args) -> None:
 def main(argv=None) -> None:
     p = argparse.ArgumentParser(prog="mcts-laya")
     p.add_argument("-v", "--verbose", action="store_true")
+    p.add_argument("--progress", default=None, choices=["auto", "bar", "log", "off"],
+                   help="progress display (default: $MCTS_LAYA_PROGRESS, else auto = bars on a terminal, "
+                        "periodic lines in a log file)")
     p.add_argument("--cpus", default=None, metavar="N",
                    help="limit the CPU cores used (default: $MCTS_LAYA_CPUS, else all cores; 0 = no limit)")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -172,7 +178,10 @@ def main(argv=None) -> None:
     args = p.parse_args(argv)
     logging.basicConfig(level=logging.INFO if args.verbose else logging.WARNING,
                         format="%(asctime)s %(levelname)s %(message)s", stream=sys.stderr)
+    from .progress import set_mode
     from .runtime import limit_cpus
+
+    set_mode(args.progress)
 
     args.cpus_used = limit_cpus(args.cpus)
     args.func(args)

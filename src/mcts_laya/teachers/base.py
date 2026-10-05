@@ -13,6 +13,7 @@ from typing import Any, List, Sequence, Tuple
 
 import numpy as np
 
+from .. import progress
 from ..envs.base import Environment
 from ..training.sample import Sample
 
@@ -37,9 +38,9 @@ class OracleTeacher(ABC):
             pi[:] = 1.0 / len(actions)
         return actions, pi, value
 
-    def generate(self, rng: random.Random, n_problems: int) -> List[Sample]:
+    def generate(self, rng: random.Random, n_problems: int, desc: str = "teacher") -> List[Sample]:
         env, out = self.env, []
-        for _ in range(n_problems):
+        for _ in progress.track(range(n_problems), desc=desc, unit="problems"):
             state = env.sample_problem(rng, "train")
             for _ in range(self.max_moves):
                 if env.is_terminal(state):

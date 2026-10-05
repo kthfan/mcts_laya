@@ -25,6 +25,12 @@ scripts/setup_env.sh --download    # 再下載 laya-multilingual 權重到 model
 MCTS_LAYA_CPUS=4 .venv/bin/python -m pytest
 ```
 
+**進度顯示**：teacher 資料、warm start 訓練、每一輪的 self-play / 訓練 / 評估都會顯示進度、速度與預估剩餘時間，以及目前的成功率或 loss。在終端機上是 tqdm 進度條；輸出導向檔案時（例如 `run_ablation.py` 的 `run.log`）改成每 30 秒一行文字。可以用 `--progress {auto,bar,log,off}` 或 `MCTS_LAYA_PROGRESS` 切換，`MCTS_LAYA_PROGRESS_INTERVAL` 調整文字模式的間隔秒數：
+
+```bash
+.venv/bin/mcts-laya --progress log run configs/phase0/countdown.yaml
+```
+
 權重從 `huggingface.co/convaiinnovations/laya` 下載，需要能連上 Hugging Face。連不上時，可以用微型的隨機初始化模型（磁碟格式與 Laya 完全相同）在 CPU 上開發與測試：
 
 ```bash

@@ -22,6 +22,7 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 import yaml
 
+from . import progress
 from .config import EvalSearch, ExperimentConfig, config_to_dict
 from .evaluation import evaluate_searcher, format_table
 from .evaluators.base import Evaluator
@@ -85,6 +86,9 @@ class AlphaZeroLoop:
             f.write(json.dumps(record) + "\n")
         log.info(json.dumps(record))
 
+    def _tag(self, iteration: int) -> str:
+        return f"it {iteration}/{self.cfg.iterations}"
+
     def _searcher(self, name: str, evaluator: Evaluator, params: Dict[str, Any]):
         return SEARCHERS.build(name, self.env, evaluator, **params)
 
@@ -98,7 +102,8 @@ class AlphaZeroLoop:
         for spec in specs:
             searcher = self._searcher(spec.name, self._eval_evaluator(spec), spec.params)
             r = evaluate_searcher(self.env, searcher, self.eval_problems, seed=self.cfg.eval.seed,
-                                  max_moves=self.cfg.eval.max_moves)
+                                  max_moves=self.cfg.eval.max_moves,
+                                  desc=f"{self._tag(iteration)} eval {stage} {spec.label}")
             results[spec.label] = r
             self.log({"kind": "eval", "iteration": iteration, "stage": stage, "label": spec.label, **r})
         return results
@@ -141,9 +146,9 @@ class AlphaZeroLoop:
     def warm_start(self) -> None:
         t = self.cfg.teacher
         teacher = TEACHERS.build(self.cfg.env.name, self.env, explore=t.explore)
-        samples = teacher.generate(self.py_rng, t.problems)
+        samples = teacher.generate(self.py_rng, t.problems, desc="it 0 teacher data")
         save_samples(str(self.out / "teacher_samples.jsonl"), samples)
-        metrics = self.trainer.train(samples, epochs=t.epochs)
+        metrics = self.trainer.train(samples, epochs=t.epochs, desc="it 0 warm-start train")
         self.evaluator.clear_cache()
         self.log({"kind": "train", "iteration": 0, "stage": "warmstart", "samples": len(samples), **metrics})
         if self.cfg.train.teacher_mix > 0:
@@ -154,8 +159,15 @@ class AlphaZeroLoop:
         sp = self.cfg.selfplay
         searcher = self._searcher(self.cfg.search.name, self.evaluator, self.cfg.search.params)
         t0, rows0 = time.time(), self.evaluator.rows_evaluated
-        episodes = [play_episode(self.env, searcher, self.env.sample_problem(self.py_rng, "train"), self.np_rng,
-                                 sp.config) for _ in range(sp.episodes_per_iteration)]
+        episodes = []
+        bar = progress.bar(sp.episodes_per_iteration, f"{self._tag(iteration)} self-play", "episodes")
+        for _ in range(sp.episodes_per_iteration):
+            episodes.append(play_episode(self.env, searcher, self.env.sample_problem(self.py_rng, "train"),
+                                         self.np_rng, sp.config))
+            bar.update(1)
+            bar.set_postfix(success=float(np.mean([e.success for e in episodes])),
+                            moves=float(np.mean([e.length for e in episodes])))
+        bar.close()
         update_best_moves(self.env, episodes, self.best_moves)
         weights = policy_weights(self.env, episodes, sp.policy_filter, self.best_moves,
                                  failed_weight=sp.config.failed_policy_weight,
@@ -179,7 +191,7 @@ class AlphaZeroLoop:
 
     def train(self, iteration: int) -> None:
         batch = self.replay.sample(self.cfg.train.samples_per_iteration, self.py_rng)
-        metrics = self.trainer.train(batch)
+        metrics = self.trainer.train(batch, desc=f"{self._tag(iteration)} train")
         self.evaluator.clear_cache()
         self.log({"kind": "train", "iteration": iteration, "stage": "selfplay", "samples": len(batch), **metrics})
 
