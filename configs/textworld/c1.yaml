@@ -1,6 +1,6 @@
 # Phase 1a / TextWorld C1: cooking, 1 ingredient, 1 room (read the cookbook, prepare and eat the meal)
 # Full-scale run (GPU recommended). Generate the pool first:
-#   mcts-laya tw-games --level C1 --train 150 --eval 40 --out data/textworld
+#   mcts-laya tw-games --level C1 --train 150 --eval 100 --val 40 --out data/textworld
 name: phase1a-textworld-c1-laya
 output_dir: runs/phase1a/c1-laya
 seed: 0
@@ -42,8 +42,10 @@ train:
            augment_option_order: true}
 
 eval:
-  problems: 40
+  problems: 100         # test games: measure the kept weights only
   seed: 12345
+  gate_problems: 40    # validation games (split "val"): the gate decides on these
+  gate_split: val
   max_moves: 50
   searches:
     - {label: greedy, name: greedy}

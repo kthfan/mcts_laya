@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 EVAL_SEED_OFFSET = 1_000_000
+VAL_SEED_OFFSET = 2_000_000  # validation games for the gate, disjoint from train and eval
 
 
 @dataclass(frozen=True)
@@ -76,13 +77,15 @@ def _make_one(spec: LevelSpec, seed: int, out: Path) -> Optional[str]:
 
 
 def generate_pool(root: str, level: str, n_train: int, n_eval: int, workers: int = 4,
-                  seed: int = 0, spec: Optional[LevelSpec] = None) -> Path:
+                  seed: int = 0, spec: Optional[LevelSpec] = None, n_val: int = 0) -> Path:
     """Generate (or top up) the pool for `level`; returns the level directory."""
     spec = spec or LEVELS[level]
     level_dir = Path(root) / level
     games: Dict[str, List[str]] = {}
     jobs = []
-    for split, n, offset in (("train", n_train, 0), ("eval", n_eval, EVAL_SEED_OFFSET)):
+    for split, n, offset in (("train", n_train, 0), ("eval", n_eval, EVAL_SEED_OFFSET), ("val", n_val, VAL_SEED_OFFSET)):
+        if n <= 0:
+            continue
         (level_dir / split).mkdir(parents=True, exist_ok=True)
         for i in range(n):
             s = seed + offset + i

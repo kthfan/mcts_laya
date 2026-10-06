@@ -9,6 +9,7 @@
 - [x] Python 3.11 venv（uv）+ `laya==0.3.24`、torch 2.14、transformers 5.18、SymPy、pytest（`scripts/setup_env.sh`）
 - [x] `mcts-laya download`：已下載 `multilingual`（644 MB）與 `english`（804 MB）到 `models/laya/<name>/`（每個 checkpoint 一個目錄）
 - [x] `mcts-laya make-tiny`：離線用的微型 Laya 相容 checkpoint
+- [x] v2 評估設計：gate 用驗證集（`eval.gate_problems`，TextWorld `val` 分割，`tw-games --val`），100 局測試集只評估保留的權重
 - [x] 平行對局（AlphaZero actors）：`parallel.workers`，actor 程序各自跑環境 / 搜尋 / tokenization，主程序合併請求後批次送進 GPU（`src/mcts_laya/selfplay/parallel.py`）
 - [x] GPU 使用率：`run_ablation.py --jobs N` 平行跑實驗；TextWorld 每局多個 runner + 觀測快取（引擎時間 −30%，結果不變）
 - [x] 進度顯示：tqdm 進度條 / 寫入 log 時改為定時文字行（`src/mcts_laya/progress.py`，`--progress`）

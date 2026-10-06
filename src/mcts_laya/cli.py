@@ -25,14 +25,21 @@ def _cmd_make_tiny(args) -> None:
 
 
 def _cmd_tw_games(args) -> None:
+    from pathlib import Path
+
     from .envs.textworld_games import LEVELS, generate_pool
 
     for level in args.level:
-        d = generate_pool(args.out, level, args.train, args.eval, workers=args.workers or min(8, args.cpus_used or 8), seed=args.seed)
-        import json
-
+        # a split whose count is not given keeps what the existing pool has (new pool: 200 / 50 / 0)
+        old = Path(args.out) / level / "manifest.json"
+        have = {k: len(v) for k, v in json.loads(old.read_text())["games"].items()} if old.exists() else {}
+        n = {split: given if given is not None else have.get(split, default)
+             for split, given, default in (("train", args.train, 200), ("eval", args.eval, 50), ("val", args.val, 0))}
+        d = generate_pool(args.out, level, n["train"], n["eval"], workers=args.workers or min(8, args.cpus_used or 8),
+                          seed=args.seed, n_val=n["val"])
         m = json.loads((d / "manifest.json").read_text())
-        print(f"{level}: {len(m['games'].get('train', []))} train / {len(m['games'].get('eval', []))} eval -> {d}")
+        print(f"{level}: {len(m['games'].get('train', []))} train / {len(m['games'].get('eval', []))} eval / "
+              f"{len(m['games'].get('val', []))} val -> {d}")
 
 
 def _viz_context(args):
@@ -128,8 +135,10 @@ def main(argv=None) -> None:
     g = sub.add_parser("tw-games", help="generate TextWorld game pools for curriculum levels")
     g.add_argument("--level", nargs="+", default=["L1"], help="level names, e.g. L1 L2 L2-goal L3-goal")
     g.add_argument("--out", default="data/textworld")
-    g.add_argument("--train", type=int, default=200)
-    g.add_argument("--eval", type=int, default=50)
+    g.add_argument("--train", type=int, default=None, help="training games (default: keep the pool's, new pool 200)")
+    g.add_argument("--eval", type=int, default=None, help="test games (default: keep the pool's, new pool 50)")
+    g.add_argument("--val", type=int, default=None,
+                   help="validation games for the gate, eval.gate_problems (default: keep the pool's, new pool 0)")
     g.add_argument("--workers", type=int, default=None, help="parallel compilers (default: the CPU limit, at most 8)")
     g.add_argument("--seed", type=int, default=0)
     g.set_defaults(func=_cmd_tw_games)

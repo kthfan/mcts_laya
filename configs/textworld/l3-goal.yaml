@@ -1,6 +1,6 @@
 # Phase 1a / TextWorld L3-goal: 8 rooms, 8-step quests, objective names only the final step
 # Full-scale run (GPU recommended). Generate the pool first:
-#   mcts-laya tw-games --level L3-goal --train 150 --eval 40 --out data/textworld
+#   mcts-laya tw-games --level L3-goal --train 150 --eval 100 --val 40 --out data/textworld
 name: phase1a-textworld-l3-goal-laya
 output_dir: runs/phase1a/l3-goal-laya
 seed: 0
@@ -41,8 +41,10 @@ train:
            augment_option_order: true}
 
 eval:
-  problems: 40
+  problems: 100         # test games: measure the kept weights only
   seed: 12345
+  gate_problems: 40    # validation games (split "val"): the gate decides on these
+  gate_split: val
   max_moves: 50
   searches:
     - {label: greedy, name: greedy}

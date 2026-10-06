@@ -35,3 +35,30 @@ def test_loop_runs_end_to_end(tiny_checkpoint, tmp_path):
     assert {"eval", "train", "selfplay", "gate"} <= kinds
     assert (tmp_path / "summary.md").exists()
     assert (tmp_path / "checkpoints" / "final" / "model.safetensors").exists()
+
+
+def test_gate_on_validation_split_and_test_reports_only_kept_weights(tiny_checkpoint, tmp_path):
+    # tolerance -1: every self-play iteration is rejected, so its weights must never reach the test set
+    cfg = load_config("configs/phase0/algebra_tiny.yaml", [
+        f"output_dir={tmp_path}", f"model.checkpoint={tiny_checkpoint}", "iterations=2",
+        "teacher.problems=10", "teacher.epochs=1", "selfplay.episodes_per_iteration=2",
+        "eval.problems=3", "eval.gate_problems=2", "eval.baselines=[]", "search.params.num_simulations=4",
+        "save_checkpoints=none", "gate.enabled=true", "gate.tolerance=-1",
+    ])
+    loop = AlphaZeroLoop(cfg)
+    assert len(loop.val_problems) == 2
+    loop.run()
+    recs = [json.loads(l) for l in open(tmp_path / "metrics.jsonl")]
+    val = [r for r in recs if r["kind"] == "eval" and r["split"] == "val"]
+    assert {r["label"] for r in val} == {"puct16"} and {r["problems"] for r in val} == {2}
+    gates = [r for r in recs if r["kind"] == "gate"]
+    assert all(g["split"] == "val" for g in gates)
+    assert [g["accepted"] for g in gates if g["iteration"] > 0] == [False, False]
+    test = {(r["iteration"], r["label"]): r for r in recs if r["kind"] == "eval" and r["split"] == "eval"}
+    for it in (1, 2):  # reverted to the warm-start weights: their test results, reused
+        assert test[(it, "puct16")]["reused"] and test[(it, "puct16")]["reward"] == test[(0, "puct16")]["reward"]
+    # the learning curve shows test results only: initial, warm start, 2 self-play iterations
+    assert [(r["iteration"], r["stage"]) for r in loop.curve()] == [
+        (0, "initial"), (0, "warmstart"), (1, "selfplay"), (2, "selfplay")]
+    assert [r["puct16.reward"] for r in loop.curve()][1:] == [test[(0, "puct16")]["reward"]] * 3
+    assert "## Gate" in (tmp_path / "summary.md").read_text()

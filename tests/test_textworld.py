@@ -15,7 +15,7 @@ from mcts_laya.teachers import TextWorldTeacher  # noqa: E402
 @pytest.fixture(scope="session")
 def tw_root(tmp_path_factory):
     root = tmp_path_factory.mktemp("tw")
-    generate_pool(str(root), "L1", n_train=3, n_eval=2, workers=4)
+    generate_pool(str(root), "L1", n_train=3, n_eval=2, workers=4, n_val=1)
     return str(root)
 
 
@@ -26,9 +26,18 @@ def env(tw_root):
 
 def test_pool_manifest_has_disjoint_splits(tw_root):
     m = load_manifest(f"{tw_root}/L1")
-    assert len(m["games"]["train"]) == 3 and len(m["games"]["eval"]) == 2
-    assert not set(m["games"]["train"]) & set(m["games"]["eval"])
+    assert len(m["games"]["train"]) == 3 and len(m["games"]["eval"]) == 2 and len(m["games"]["val"]) == 1
+    splits = [set(m["games"][k]) for k in ("train", "eval", "val")]
+    assert sum(map(len, splits)) == len(set().union(*splits))  # pairwise disjoint
     assert m["options"]["quest_length"] == LEVELS["L1"].quest_length
+
+
+def test_tw_games_keeps_unspecified_split_sizes(tw_root):
+    from mcts_laya.cli import main
+
+    main(["--progress", "off", "tw-games", "--level", "L1", "--out", tw_root, "--val", "1"])
+    m = load_manifest(f"{tw_root}/L1")
+    assert {k: len(v) for k, v in m["games"].items()} == {"train": 3, "eval": 2, "val": 1}
 
 
 def test_text_cleaning():

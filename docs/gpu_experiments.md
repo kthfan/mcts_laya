@@ -47,10 +47,12 @@ scripts/setup_env.sh --download            # 建 .venv、安裝本套件、下�
 .venv/bin/mcts-laya bench --checkpoint models/laya/multilingual --env algebra --device cuda --batch 64 --positions 256
 # 記下 rows_per_second（CPU 上是 11.7；GPU 應該高出一到兩個數量級）
 
-.venv/bin/mcts-laya tw-games --level L2-goal L3-goal C1 --train 150 --eval 40 --out data/textworld --workers 8
+.venv/bin/mcts-laya tw-games --level L2-goal L3-goal C1 --train 150 --eval 100 --val 40 --out data/textworld --workers 8
 ```
 
 遊戲池由固定的 seed 產生，和 CPU 實驗用的是同一批遊戲（train seed 0–149、eval seed 1000000–1000039）。
+
+**v2 評估設計（第二輪起）**：gate 用 40 局驗證遊戲（`val`，seed 2000000–2000039）決定是否保留這一輪的權重；100 局測試遊戲（`eval`，seed 1000000–1000099，前 40 局與第一輪相同）只評估 gate 保留下來的權重。被 gate 退回的那一輪，測試結果直接沿用上一個保留權重的結果（紀錄中標為 `"reused": true`）。所以學習曲線和 `final reward` 一定是實際保留的模型，而且選模型時沒有看過測試遊戲。已經產生的遊戲池只要補上缺的部分：上面的指令會沿用既有的 150 局訓練遊戲，只新增 60 局測試遊戲和 40 局驗證遊戲。結果寫到 `runs/ablation/selfplay_textworld_v2`；第一輪的結果留在 `runs/ablation/selfplay_textworld`，兩者不能直接比較。
 
 ## 3. 試跑（約 15–30 分鐘）
 
@@ -70,6 +72,19 @@ cat runs/ablation/smoke/L2-goal/control-s0/summary.md
 **如果記憶體不足**：在 `configs/ablation/selfplay_textworld.yaml` 的 `gpu_overrides` 把 `train.config.batch_size` 改成 8。**24 GB 以上的卡**可以加上 `train.config.gradient_checkpointing=false`，加快訓練。
 
 ## 4. 正式實驗（分階段）
+
+**第二輪（v2）建議順序**：第一輪在 L2-goal 已經接近上限，各變體分不出差異，所以直接跑較難的等級：
+
+```bash
+# L3-goal、C1：control、A-efficient、C-sims48，各 3 個 seed（18 個 run）
+.venv/bin/python scripts/run_ablation.py configs/ablation/selfplay_textworld.yaml --only L3-goal C1 \
+    --variants control A-efficient C-sims48 --seeds 0 1 2 --jobs 2
+# （選配）銜接第一輪：L2-goal 的 control、A-efficient；以及 DAgger 的 value 假設
+.venv/bin/python scripts/run_ablation.py configs/ablation/selfplay_textworld.yaml --only L2-goal \
+    --variants control A-efficient D-dagger D-dagger-outcome --seeds 0 1 2 --jobs 2
+```
+
+以下是第一輪的分階段做法，保留作為參考：
 
 ```bash
 # 第一階段：每個變體先跑 seed 0（L2-goal，7 個 run）
@@ -92,17 +107,17 @@ cat runs/ablation/smoke/L2-goal/control-s0/summary.md
 - 腳本可以續跑：已完成的 run（目錄裡有 `done.json`）會跳過，中斷後重下同一行指令即可。中斷中的 run 會從頭開始。
 - 長時間執行建議包在 `tmux` 或 `nohup ... &` 裡。
 - CPU：預設使用所有核心。需要保留核心給其他工作時，可以用 `--cpus N` 限制（例如 `run_ablation.py ... --cpus 6`；TextWorld 重播、tokenizer、torch 執行緒都包含在內）。
-- 進度：`tail -f runs/ablation/selfplay_textworld/L2-goal/<變體>-s<seed>/run.log`。每 30 秒會有一行目前階段的進度，例如 `[it 3/8 self-play] 44/64 (69%) episodes, 2.08 episodes/s, elapsed 0:21, eta 0:09 | success=0.791, moves=7.74`（間隔可用 `MCTS_LAYA_PROGRESS_INTERVAL=10` 調整）。同目錄的 `summary.md` 每輪更新。
+- 進度：`tail -f runs/ablation/selfplay_textworld_v2/L2-goal/<變體>-s<seed>/run.log`。每 30 秒會有一行目前階段的進度，例如 `[it 3/8 self-play] 44/64 (69%) episodes, 2.08 episodes/s, elapsed 0:21, eta 0:09 | success=0.791, moves=7.74`（間隔可用 `MCTS_LAYA_PROGRESS_INTERVAL=10` 調整）。同目錄的 `summary.md` 每輪更新。
 
 ## 5. 彙整與判讀
 
 ```bash
-.venv/bin/python scripts/summarize_ablation.py runs/ablation/selfplay_textworld
-#   -> runs/ablation/selfplay_textworld/summary.md（每個變體跨 seed 的平均 ± 標準差）與 runs.csv（每個 run）
+.venv/bin/python scripts/summarize_ablation.py runs/ablation/selfplay_textworld_v2
+#   -> runs/ablation/selfplay_textworld_v2/summary.md（每個變體跨 seed 的平均 ± 標準差）與 runs.csv（每個 run）
 ```
 
 表格中的欄位：
-- `final reward`、`best reward`：最後一輪與最佳一輪的 PUCT16 評估 reward。有 gate，所以最終權重不會比最佳權重差太多。
+- `final reward`：最終保留的權重在 100 局測試遊戲上的 PUCT16 reward（**主要結果**）。`best reward`：各輪保留權重在測試遊戲上的最高值；因為是從多次評估中挑最高的，會略為偏高，僅供參考。
 - `gain vs warm start`：最後一輪減掉 warm start 的 reward。**這是主要指標**。
 - `greedy final`：不搜尋時網路本身的表現，用來看網路有沒有真的變強。
 - `final − control (paired)`：每個 seed 的 final reward 減掉 control 同一個 seed 的 final reward，再取平均。warm start 依 seed 而異，成對比較可以抵消這部分差異，3 個 seed 時比單純比平均可靠。
@@ -117,14 +132,14 @@ cat runs/ablation/smoke/L2-goal/control-s0/summary.md
 ## 6. 要傳回的結果
 
 ```bash
-tar czf ablation_results.tgz runs/ablation/selfplay_textworld/summary.md runs/ablation/selfplay_textworld/runs.csv \
-    runs/ablation/selfplay_textworld/*/*/{summary.md,metrics.jsonl,config.yaml}
+tar czf ablation_results.tgz runs/ablation/selfplay_textworld_v2/summary.md runs/ablation/selfplay_textworld_v2/runs.csv \
+    runs/ablation/selfplay_textworld_v2/*/*/{summary.md,metrics.jsonl,config.yaml}
 ```
 
 不需要傳 checkpoint。如果想看某個 run 的對局細節，可以產生視覺化報告（約幾分鐘）：
 
 ```bash
-.venv/bin/mcts-laya viz --run runs/ablation/selfplay_textworld/L2-goal/A-efficient-s0 --problems 4 --device cuda
+.venv/bin/mcts-laya viz --run runs/ablation/selfplay_textworld_v2/L2-goal/A-efficient-s0 --problems 4 --device cuda
 ```
 
 把 `ablation_results.tgz` 放進 repo（例如 `docs/results/ablation/`）或貼回對話，我就能接著分析並決定下一步。

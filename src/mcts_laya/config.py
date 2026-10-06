@@ -85,6 +85,12 @@ class EvalSection:
     seed: int = 12345
     max_moves: int = 50
     every: int = 1
+    # Gate on a separate validation split: `gate_problems` problems from `gate_split` (seeded by
+    # `gate_seed`) decide whether an iteration's weights are kept, and the test problems above only
+    # measure the kept model. 0 = legacy: the gate reads the test evaluation itself.
+    gate_problems: int = 0
+    gate_split: str = "val"
+    gate_seed: int = 54321
     searches: List[EvalSearch] = field(default_factory=list)
     baselines: List[EvalSearch] = field(default_factory=list)  # evaluated once, not per iteration
 

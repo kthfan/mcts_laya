@@ -242,7 +242,8 @@ class TextWorldEnv(SingleAgentEnvironment):
     def _pool(self, split: str) -> List[str]:
         pool = self.games.get(split) or []
         if not pool:
-            raise ValueError(f"level {self.level!r} has no {split!r} games in {self.level_dir}")
+            hint = f" (generate them: mcts-laya tw-games --level {self.level} --{split} N)" if split in ("val", "eval") else ""
+            raise ValueError(f"level {self.level!r} has no {split!r} games in {self.level_dir}{hint}")
         return pool
 
     def sample_problem(self, rng: random.Random, split: str = "train") -> TWState:

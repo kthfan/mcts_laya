@@ -76,6 +76,11 @@ class AlphaZeroLoop:
         self.replay = ReplayBuffer(cfg.train.replay_capacity)
         eval_rng = random.Random(cfg.eval.seed)
         self.eval_problems = self.env.sample_problems(eval_rng, cfg.eval.problems, split="eval")
+        self.val_problems = None
+        if cfg.eval.gate_problems > 0:
+            self.val_problems = self.env.sample_problems(random.Random(cfg.eval.gate_seed), cfg.eval.gate_problems,
+                                                         split=cfg.eval.gate_split)
+        self._kept_test: Optional[Dict[str, Dict[str, float]]] = None  # test results of the kept weights
         self.history: List[Dict[str, Any]] = []
         self.best_metric: Optional[float] = None
         self.best_state: Optional[dict] = None
@@ -131,25 +136,64 @@ class AlphaZeroLoop:
             return self.evaluator
         return EVALUATORS.build(spec.evaluator, **spec.evaluator_params)
 
-    def evaluate(self, iteration: int, stage: str, specs: List[EvalSearch]) -> Dict[str, Dict[str, float]]:
+    def evaluate(self, iteration: int, stage: str, specs: List[EvalSearch], split: str = "eval") -> Dict[str, Dict[str, float]]:
+        """Run `specs` on the test problems (`split="eval"`) or on the gate's validation problems."""
+        problems, seed = ((self.val_problems, self.cfg.eval.gate_seed) if split == "val"
+                          else (self.eval_problems, self.cfg.eval.seed))
         results = {}
         for spec in specs:
-            desc = f"{self._tag(iteration)} eval {stage} {spec.label}"
+            desc = f"{self._tag(iteration)} {'gate' if split == 'val' else 'eval'} {stage} {spec.label}"
             pool = self.actors()
             if pool is not None:
                 cfg = SelfPlayConfig(max_moves=self.cfg.eval.max_moves, add_noise=False, action_selection="search")
                 ss = search_spec(spec.name, spec.params, spec.evaluator, spec.evaluator_params)
-                tasks = [episode_task(ss, p, np.random.default_rng([self.cfg.eval.seed, i]).integers(2 ** 62), cfg)
-                         for i, p in enumerate(self.eval_problems)]
+                tasks = [episode_task(ss, p, np.random.default_rng([seed, i]).integers(2 ** 62), cfg)
+                         for i, p in enumerate(problems)]
                 t0 = time.time()
                 r = summarize_episodes(pool.run(tasks, desc), time.time() - t0)
             else:
                 searcher = self._searcher(spec.name, self._eval_evaluator(spec), spec.params)
-                r = evaluate_searcher(self.env, searcher, self.eval_problems, seed=self.cfg.eval.seed,
-                                      max_moves=self.cfg.eval.max_moves, desc=desc)
+                r = evaluate_searcher(self.env, searcher, problems, seed=seed, max_moves=self.cfg.eval.max_moves,
+                                      desc=desc)
             results[spec.label] = r
-            self.log({"kind": "eval", "iteration": iteration, "stage": stage, "label": spec.label, **r})
+            self.log({"kind": "eval", "iteration": iteration, "stage": stage, "label": spec.label, "split": split, **r})
         return results
+
+    def _gate_spec(self) -> EvalSearch:
+        label = self.cfg.gate.metric.partition(".")[0]
+        for spec in self.cfg.eval.searches:
+            if spec.label == label:
+                return spec
+        raise KeyError(f"gate.metric {self.cfg.gate.metric!r} names no eval search label")
+
+    def checkpoint_eval(self, iteration: int, stage: str, test: bool = True) -> None:
+        """Gate the current weights, then measure the kept ones on the test problems.
+
+        Legacy (no validation split): the test evaluation is also what the gate reads, so the logged
+        result is the candidate's, even when the gate then reverts it.
+        """
+        cfg = self.cfg
+        if self.val_problems is None:
+            if test:
+                res = self.evaluate(iteration, stage, cfg.eval.searches)
+                if cfg.gate.enabled:
+                    self._apply_gate(iteration, res)
+            return
+        accepted = True
+        if cfg.gate.enabled:
+            accepted = self._apply_gate(iteration, self.evaluate(iteration, stage, [self._gate_spec()], split="val"),
+                                        split="val")
+            if accepted:
+                self._kept_test = None  # new weights: their test results are not known yet
+        if not test:
+            return
+        if not accepted and self._kept_test is not None:
+            # reverted to weights already measured: same model, same problems and seeds
+            for label, r in self._kept_test.items():
+                self.log({"kind": "eval", "iteration": iteration, "stage": stage, "label": label, "split": "eval",
+                          **r, "reused": True})
+            return
+        self._kept_test = self.evaluate(iteration, stage, cfg.eval.searches)
 
     def _gate_value(self, results: Dict[str, Dict[str, float]]) -> Optional[float]:
         if not self.cfg.gate.metric:
@@ -157,7 +201,7 @@ class AlphaZeroLoop:
         label, _, metric = self.cfg.gate.metric.partition(".")
         return results.get(label, {}).get(metric)
 
-    def _apply_gate(self, iteration: int, results: Dict[str, Dict[str, float]]) -> bool:
+    def _apply_gate(self, iteration: int, results: Dict[str, Dict[str, float]], split: str = "eval") -> bool:
         value = self._gate_value(results)
         if value is None:
             return True
@@ -175,7 +219,7 @@ class AlphaZeroLoop:
             self.agent.cfg["temperature"] = list(self.best_temps)
             self.evaluator.clear_cache()
         self.log({"kind": "gate", "iteration": iteration, "value": value, "best": self.best_metric,
-                  "accepted": accepted})
+                  "accepted": accepted, "split": split})
         return accepted
 
     def _save(self, iteration: int, final: bool = False) -> None:
@@ -260,22 +304,16 @@ class AlphaZeroLoop:
         cfg = self.cfg
         if cfg.eval.baselines:
             self.evaluate(0, "baseline", cfg.eval.baselines)
-        res = self.evaluate(0, "initial", cfg.eval.searches)
-        self._apply_gate(0, res) if cfg.gate.enabled else None
+        self.checkpoint_eval(0, "initial")
         if cfg.teacher.enabled:
             self.warm_start()
-            res = self.evaluate(0, "warmstart", cfg.eval.searches)
-            if cfg.gate.enabled:
-                self.best_metric = None  # the warm start defines the reference
-                self._apply_gate(0, res)
+            self.best_metric = None  # the warm start defines the gate's reference
+            self.checkpoint_eval(0, "warmstart")
         self.write_summary()
         for it in range(1, cfg.iterations + 1):
             self.self_play(it)
             self.train(it)
-            if it % cfg.eval.every == 0 or it == cfg.iterations:
-                res = self.evaluate(it, "selfplay", cfg.eval.searches)
-                if cfg.gate.enabled:
-                    self._apply_gate(it, res)
+            self.checkpoint_eval(it, "selfplay", test=it % cfg.eval.every == 0 or it == cfg.iterations)
             self._save(it)
             self.write_summary()
         self._save(cfg.iterations, final=True)
@@ -288,7 +326,7 @@ class AlphaZeroLoop:
         """One row per (iteration, stage) with `<label>.<metric>` columns."""
         rows: Dict[tuple, Dict[str, Any]] = {}
         for r in self.history:
-            if r.get("kind") != "eval" or r["stage"] == "baseline":
+            if r.get("kind") != "eval" or r["stage"] == "baseline" or r.get("split") == "val":
                 continue
             key = (r["iteration"], r["stage"])
             row = rows.setdefault(key, {"iteration": r["iteration"], "stage": r["stage"]})
@@ -345,6 +383,10 @@ class AlphaZeroLoop:
             cols = ["iteration", "stage", "samples", "policy_ce", "value_ce", "heldout_policy_top1",
                     "heldout_value_brier", "temperature_choice", "temperature_noul"]
             lines += ["## Training", "", format_table(tr, cols), ""]
+        gates = [r for r in self.history if r.get("kind") == "gate"]
+        if gates and self.val_problems is not None:
+            lines += [f"## Gate ({self.cfg.gate.metric} on {len(self.val_problems)} {self.cfg.eval.gate_split} problems)",
+                      "", format_table(gates, ["iteration", "value", "best", "accepted"]), ""]
         checks = self.milestones()
         if checks:
             rows = [{"check": c["check"], "value": c["value"], "result": "PASS" if c["pass"] else "FAIL"}

@@ -35,7 +35,8 @@ def last_attempt(recs):
 def load(run_dir: Path, label: str):
     all_recs = [json.loads(l) for l in open(run_dir / "metrics.jsonl") if l.strip()]
     recs, attempts = last_attempt(all_recs)
-    ev = [r for r in recs if r.get("kind") == "eval" and r.get("stage") != "baseline"]
+    # test-set evaluations only (the gate's validation evaluations carry split="val")
+    ev = [r for r in recs if r.get("kind") == "eval" and r.get("stage") != "baseline" and r.get("split") != "val"]
     def at(stage, lab):
         xs = [r for r in ev if r["stage"] == stage and r["label"] == lab]
         return xs[-1] if xs else None

@@ -3,13 +3,17 @@
 #
 #   python scripts/run_ablation.py configs/ablation/selfplay_textworld.yaml            # everything
 #   python scripts/run_ablation.py configs/ablation/selfplay_textworld.yaml --only L2-goal --dry-run
-#   python scripts/summarize_ablation.py runs/ablation/selfplay_textworld
+#   python scripts/summarize_ablation.py runs/ablation/selfplay_textworld_v2
+#
+# v2 (the level configs' eval section): the gate decides on 40 validation games (split "val"), and
+# 100 test games measure only the weights the gate kept. Results of the first round (gate on the
+# test games themselves) stay in runs/ablation/selfplay_textworld and are not comparable.
 #
 # Every run = <level base config> + <gpu overrides> + <variant overrides> + seed. All variants of a
 # level share the same warm-start data and the same evaluation games (eval.seed is fixed), so the
 # comparison between variants is paired.
 name: selfplay_textworld
-output_root: runs/ablation/selfplay_textworld
+output_root: runs/ablation/selfplay_textworld_v2
 seeds: [0, 1, 2]
 
 levels:                       # run in this order; later levels only if you have the budget
@@ -48,3 +52,6 @@ variants:
   D-dagger:                   # teacher relabels visited states (imitation; upper-bound reference)
     - selfplay.relabel=teacher
     - selfplay.relabel_value=teacher
+  D-dagger-outcome:           # teacher policy labels, but the value target stays the self-play outcome
+    - selfplay.relabel=teacher
+    - selfplay.relabel_value=outcome
