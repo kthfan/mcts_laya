@@ -17,6 +17,7 @@ deterministic, so neither changes any result.
 
 from __future__ import annotations
 
+import logging
 import random
 import re
 from collections import OrderedDict
@@ -27,6 +28,40 @@ from typing import Dict, List, Optional, Sequence, Tuple
 from ..registry import ENVIRONMENTS
 from .base import SingleAgentEnvironment
 from .textworld_games import LEVELS, load_manifest
+
+log = logging.getLogger(__name__)
+
+# TextWorld re-plans the quest after every action (ActionDependencyTree.flatten). After some
+# off-plan action sequences that MCTS reaches - e.g. L3-goal train/43.z8 after 15 particular
+# commands - removing a leaf pushes its reverse action back, the tree never empties and the
+# generator yields forever: `tuple(tree.flatten())` grew one actor to 300 GB. Real plans in our
+# levels are at most ~23 actions, so the plan is cut at FLATTEN_CAP actions instead. A cut plan only
+# affects the oracle `policy_commands` in that state (the teacher's hint); scores, `won` / `lost` and
+# the admissible commands do not depend on it.
+FLATTEN_CAP = 100
+runaway_plans = 0  # diagnostics: plans cut in this process
+
+
+def _guard_textworld_planner() -> None:
+    from textworld.generator.game import ActionDependencyTree
+
+    if getattr(ActionDependencyTree.flatten, "_mcts_laya_capped", False):
+        return
+    unbounded = ActionDependencyTree.flatten
+
+    def flatten(self):
+        global runaway_plans
+        for n, action in enumerate(unbounded(self)):
+            if n >= FLATTEN_CAP:
+                runaway_plans += 1
+                if runaway_plans == 1:
+                    log.warning("TextWorld's planner looped (plan > %d actions); cutting it. Counted in "
+                                "mcts_laya.envs.textworld_env.runaway_plans.", FLATTEN_CAP)
+                return
+            yield action
+
+    flatten._mcts_laya_capped = True
+    ActionDependencyTree.flatten = flatten
 
 
 @dataclass(frozen=True)
@@ -66,6 +101,7 @@ class GameRunner:
     def __init__(self, path: str, with_facts: bool = False):
         import textworld
 
+        _guard_textworld_planner()
         infos = textworld.EnvInfos(objective=True, description=True, inventory=True, feedback=True,
                                    admissible_commands=True, policy_commands=True, score=True,
                                    max_score=True, won=True, lost=True, facts=with_facts, game=with_facts,

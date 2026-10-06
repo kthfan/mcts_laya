@@ -59,6 +59,11 @@ class _LogProgress:
         if time.time() - self.last >= self.interval:
             self._emit()
 
+    def heartbeat(self) -> None:
+        """Print the periodic line even if nothing finished (a stuck stage stays visible in the log)."""
+        if time.time() - self.last >= self.interval:
+            self._emit()
+
     def set_postfix(self, **kw: Any) -> None:
         self.postfix = ", ".join(f"{k}={v:.3g}" if isinstance(v, float) else f"{k}={v}" for k, v in kw.items())
 
@@ -84,6 +89,9 @@ class _NoProgress:
     def update(self, n: int = 1) -> None:
         pass
 
+    def heartbeat(self) -> None:
+        pass
+
     def set_postfix(self, **kw: Any) -> None:
         pass
 
@@ -100,7 +108,11 @@ def bar(total: Optional[int] = None, desc: str = "", unit: str = "it"):
         return _LogProgress(total, desc, unit, float(os.environ.get(ENV_VAR + "_INTERVAL", 30)))
     from tqdm.auto import tqdm
 
-    return tqdm(total=total, desc=desc, unit=unit, dynamic_ncols=True, leave=True, file=sys.stderr)
+    class _Bar(tqdm):
+        def heartbeat(self) -> None:
+            self.refresh()  # keeps elapsed time moving while nothing finishes
+
+    return _Bar(total=total, desc=desc, unit=unit, dynamic_ncols=True, leave=True, file=sys.stderr)
 
 
 def track(iterable: Iterable, total: Optional[int] = None, desc: str = "", unit: str = "it") -> Iterator:

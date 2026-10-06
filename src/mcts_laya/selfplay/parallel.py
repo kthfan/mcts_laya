@@ -242,7 +242,9 @@ class ActorPool:
                     self._send(c, ("task", tid, version, tasks[tid]))
                     busy[c] = tid
                 requests: List[tuple] = []  # (conn, rows)
-                ready = wait(list(busy))
+                ready = wait(list(busy), timeout=5.0)
+                if not ready:
+                    bar.heartbeat()  # no actor has asked or finished for 5 s: keep the log alive
                 deadline = time.perf_counter() + self.max_wait
                 while ready:
                     for c in ready:

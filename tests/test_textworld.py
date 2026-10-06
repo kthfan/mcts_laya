@@ -178,3 +178,27 @@ def test_cooking_reads_cookbook_first_and_keeps_notes(cooking_root):
     assert env.step(t, env.legal_actions(t)[0]).notes == t.notes  # notes persist
     solved, _ = teacher.solve(s)
     assert solved
+
+
+def test_textworld_planner_loop_is_cut(tmp_path):
+    """L3-goal game 43 after these commands made TextWorld's planner loop forever (an actor hit 300 GB)."""
+    import resource
+
+    import mcts_laya.envs.textworld_env as tw
+    from mcts_laya.envs.textworld_games import _make_one
+
+    path = tmp_path / "43.z8"
+    _make_one(LEVELS["L3-goal"], 43, path)
+    history = ("go east", "look", "examine durian", "drop durian", "examine lavender scented passageway",
+               "examine lavender scented passageway", "put loaf of bread on bar", "examine bar",
+               "open lavender scented passageway", "examine lavender scented passageway", "look", "go north",
+               "look", "take mouse", "go east")
+    soft, hard = resource.getrlimit(resource.RLIMIT_AS)
+    resource.setrlimit(resource.RLIMIT_AS, (min(8 * 2 ** 30, hard if hard > 0 else 8 * 2 ** 30), hard))
+    try:
+        before = tw.runaway_plans
+        obs = tw.GameRunner(str(path)).observe(history)
+    finally:
+        resource.setrlimit(resource.RLIMIT_AS, (soft, hard))
+    assert tw.runaway_plans > before and obs.admissible and not obs.won
+    assert len(obs.policy) <= tw.FLATTEN_CAP
