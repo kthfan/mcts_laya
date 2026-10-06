@@ -33,7 +33,7 @@ from .evaluators.base import Evaluator
 from .evaluators.laya_evaluator import LayaEvaluator, load_agent
 from .registry import ENVIRONMENTS, EVALUATORS, SEARCHERS, TEACHERS
 from .runtime import available_cpus
-from .selfplay.actor import SelfPlayConfig, episode_to_samples, play_episode
+from .selfplay.actor import Episode, SelfPlayConfig, episode_to_samples, play_episode
 from .selfplay.parallel import ActorPool, episode_task, resolve_workers, search_spec
 from .selfplay.targets import policy_weights, relabel_with_teacher, update_best_moves
 from .training.sample import ReplayBuffer, save_samples
@@ -110,7 +110,8 @@ class AlphaZeroLoop:
                 # rows and launches kernels, and a wide CPU thread pool would just compete with them
                 torch.set_num_threads(min(torch.get_num_threads(), 2))
             self._actors = ActorPool(self.cfg.env.name, self.cfg.env.params, self.evaluator, self.workers,
-                                     max_wait_ms=p.max_wait_ms, cache_size=p.cache_size)
+                                     max_wait_ms=p.max_wait_ms, cache_size=p.cache_size,
+                                     episode_timeout_s=p.episode_timeout_s, memory_gb=p.actor_memory_gb)
         return self._actors
 
     def close(self) -> None:
@@ -150,7 +151,16 @@ class AlphaZeroLoop:
                 tasks = [episode_task(ss, p, np.random.default_rng([seed, i]).integers(2 ** 62), cfg)
                          for i, p in enumerate(problems)]
                 t0 = time.time()
-                r = summarize_episodes(pool.run(tasks, desc), time.time() - t0)
+                played = pool.run(tasks, desc)
+                failed = sum(ep is None for ep in played)
+                # a failed episode (actor error / timeout, see ActorPool) counts as a loss at the move cap
+                episodes = [ep if ep is not None else Episode(initial_state=p, final_value=-1.0)
+                            for ep, p in zip(played, problems)]
+                r = summarize_episodes(episodes, time.time() - t0)
+                if failed:
+                    r["failed_episodes"] = failed
+                    r["moves"] = float(np.mean([ep.length if ep is not None else self.cfg.eval.max_moves
+                                                for ep in played]))
             else:
                 searcher = self._searcher(spec.name, self._eval_evaluator(spec), spec.params)
                 r = evaluate_searcher(self.env, searcher, problems, seed=seed, max_moves=self.cfg.eval.max_moves,
@@ -253,7 +263,10 @@ class AlphaZeroLoop:
             tasks = [episode_task(spec, self.env.sample_problem(self.py_rng, "train"),
                                   self.np_rng.integers(2 ** 62), sp.config)
                      for _ in range(sp.episodes_per_iteration)]
-            episodes = pool.run(tasks, desc)
+            episodes = [ep for ep in pool.run(tasks, desc) if ep is not None]  # failed episodes are dropped
+            if not episodes:
+                log.warning("iteration %d: every self-play episode failed; nothing to learn from", iteration)
+                return
         else:
             searcher = self._searcher(self.cfg.search.name, self.evaluator, self.cfg.search.params)
             episodes = []

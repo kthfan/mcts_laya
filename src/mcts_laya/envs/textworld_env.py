@@ -31,37 +31,66 @@ from .textworld_games import LEVELS, load_manifest
 
 log = logging.getLogger(__name__)
 
-# TextWorld re-plans the quest after every action (ActionDependencyTree.flatten). After some
-# off-plan action sequences that MCTS reaches - e.g. L3-goal train/43.z8 after 15 particular
-# commands - removing a leaf pushes its reverse action back, the tree never empties and the
-# generator yields forever: `tuple(tree.flatten())` grew one actor to 300 GB. Real plans in our
-# levels are at most ~23 actions, so the plan is cut at FLATTEN_CAP actions instead. A cut plan only
-# affects the oracle `policy_commands` in that state (the teacher's hint); scores, `won` / `lost` and
-# the admissible commands do not depend on it.
+# TextWorld re-plans each quest after every action (EventProgression.update ->
+# ActionDependencyTree.flatten) to report `policy_commands`. After some off-plan action sequences that
+# MCTS reaches - e.g. L3-goal train/43.z8 after 15 particular commands - removing a leaf pushes its
+# reverse action back and the tree never empties: flatten() yields forever (one actor grew to 300 GB).
+# Merely cutting the plan is not enough: compress_policy() then works on the cyclic cut plan, builds a
+# 100-deep tree and hangs as well. So a plan longer than FLATTEN_CAP (real plans in our levels are
+# <= 23 actions) abandons plan tracking for that quest for the rest of the episode: its tree and plan
+# are emptied (no `policy_commands`; the teacher then has no hint), while whether it is triggered is
+# still checked from the game state. Scores, `won` / `lost` (read from the game's own output) and the
+# admissible commands do not depend on the plans. A reset rebuilds the trees, and replaying the same
+# history abandons at the same step, so observations stay deterministic.
 FLATTEN_CAP = 100
-runaway_plans = 0  # diagnostics: plans cut in this process
+runaway_plans = 0  # diagnostics: quest plans abandoned in this process
+
+
+class _RunawayPlan(Exception):
+    pass
 
 
 def _guard_textworld_planner() -> None:
-    from textworld.generator.game import ActionDependencyTree
+    from textworld.generator.game import (ActionDependencyTree, ActionDependencyTreeElement, EventProgression,
+                                          GameProgression)
 
-    if getattr(ActionDependencyTree.flatten, "_mcts_laya_capped", False):
+    if getattr(ActionDependencyTree.flatten, "_mcts_laya_guarded", False):
         return
-    unbounded = ActionDependencyTree.flatten
+    unbounded_flatten = ActionDependencyTree.flatten
+    event_update = EventProgression.update
+    winning_policy = GameProgression.winning_policy.fget
 
     def flatten(self):
-        global runaway_plans
-        for n, action in enumerate(unbounded(self)):
+        for n, action in enumerate(unbounded_flatten(self)):
             if n >= FLATTEN_CAP:
-                runaway_plans += 1
-                if runaway_plans == 1:
-                    log.warning("TextWorld's planner looped (plan > %d actions); cutting it. Counted in "
-                                "mcts_laya.envs.textworld_env.runaway_plans.", FLATTEN_CAP)
-                return
+                raise _RunawayPlan()
             yield action
 
-    flatten._mcts_laya_capped = True
+    def update(self, action=None, state=None):
+        global runaway_plans
+        try:
+            return event_update(self, action, state)
+        except _RunawayPlan:
+            runaway_plans += 1
+            if runaway_plans == 1:
+                log.warning("TextWorld's quest planner looped (plan > %d actions); dropping that quest's plan "
+                            "for the rest of the episode. Counted in mcts_laya.envs.textworld_env.runaway_plans.",
+                            FLATTEN_CAP)
+            self._tree = ActionDependencyTree(kb=self._kb, element_type=ActionDependencyTreeElement)
+            self._policy = ()
+            if state is not None:
+                self._triggered = self.event.is_triggering(state)
+
+    def guarded_winning_policy(self):
+        try:
+            return winning_policy(self)
+        except _RunawayPlan:  # merging the quests' plans looped: report no plan
+            return None
+
+    flatten._mcts_laya_guarded = True
     ActionDependencyTree.flatten = flatten
+    EventProgression.update = update
+    GameProgression.winning_policy = property(guarded_winning_policy)
 
 
 @dataclass(frozen=True)

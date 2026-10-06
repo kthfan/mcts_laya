@@ -104,6 +104,7 @@ cat runs/ablation/smoke/L2-goal/control-s0/summary.md
 ```
 
 - **平行對局（自動開啟）**：模型在 GPU 上時，每個實驗會自動啟動「CPU 核心數 − 1」個（最多 32 個）actor 程序，同時進行多局 self-play 與評估。每個 actor 自己處理 TextWorld 引擎、搜尋樹和 tokenization，主程序只把所有 actor 的葉節點請求合併成一批送進 GPU（AlphaZero 的做法）。`summary.md` 的 Self-play 表格會多出三欄：`workers`；`rows_per_batch`（每次 GPU 呼叫的列數）；`model_busy`（GPU 呼叫占總時間的比例，接近 1 代表再加 actor 也不會更快）。可以用 `--extra parallel.workers=N` 指定 actor 數量，`parallel.workers=0` 改回單局循序執行。每個 actor 約占 0.5–0.8 GB 記憶體（RAM）。
+- **安全機制**：每個 actor 的記憶體上限是 16 GB（`parallel.actor_memory_gb`），每一局的時間上限是 30 分鐘（`parallel.episode_timeout_s`）。超過任一上限，或 actor 出錯、意外結束時，那一局記為失敗：self-play 直接捨棄，評估則算輸；接著換一個新的 actor，實驗繼續跑。失敗局數會記在 `metrics.jsonl` 的 `failed_episodes`，`run.log` 也有警告。TextWorld 的任務規劃器在少數狀態下會無限迴圈（曾讓單一 actor 用到 300 GB）；現在偵測到時會放棄該任務接下來的提示計畫，不會影響勝負判定、分數或合法指令。
 - **同時跑多個實驗**：`--jobs N` 同時跑 N 個實驗、共用同一張 GPU，每個實驗分到各自的一組 CPU 核心（每個實驗的 actor 數量也跟著變成「分到的核心數 − 1」）。有了平行對局後，單一實驗已經能用滿所有核心，`--jobs` 主要用來讓訓練階段（只用 GPU）和其他實驗的對局重疊。建議先用 `--jobs 2`。每個實驗約占 6–10 GB 顯存：H100 80 GB 最多可以跑約 6 個，用 `nvidia-smi` 確認顯存和使用率後再調整（上限大約是 CPU 核心數，以及顯存 ÷ 10 GB）。例如：
   ```bash
   .venv/bin/python scripts/run_ablation.py configs/ablation/selfplay_textworld.yaml --only L2-goal --seeds 0 --jobs 2

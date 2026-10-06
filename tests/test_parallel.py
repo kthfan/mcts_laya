@@ -66,3 +66,25 @@ def test_resolve_workers():
     assert resolve_workers("auto", "cuda:0", 8) == 7
     assert resolve_workers("auto", "cuda", 64) == 32
     assert resolve_workers(3, "cpu", 8) == 3 and resolve_workers(0, "cuda", 8) == 0
+
+
+def test_failed_and_timed_out_episodes_do_not_stop_the_pool(tiny_agent):
+    env = LinearEquationEnv()
+    ev = LayaEvaluator(tiny_agent, max_rows=64)
+    cfg = SelfPlayConfig(max_moves=8, add_noise=False)
+    good = [env.sample_problem(random.Random(i)) for i in range(3)]
+    spec = search_spec("puct", {"num_simulations": 4, "batch_size": 4})
+    with ActorPool("algebra", {}, ev, workers=2, memory_gb=4) as pool:
+        # a broken problem raises inside its actor: that episode fails, the actor is replaced
+        out = pool.run([episode_task(spec, p, i, cfg) for i, p in enumerate(good[:1] + [None] + good[1:])])
+        for proc in pool.procs:  # every actor (also the replacement) runs under the address-space cap
+            limits = open(f"/proc/{proc.pid}/limits").read()
+            assert str(4 * 2 ** 30) in next(l for l in limits.splitlines() if l.startswith("Max address space"))
+        assert out[1] is None and all(ep is not None for ep in out[:1] + out[2:])
+        assert len(pool.failures) == 1
+        # an episode over the time limit fails too; the pool keeps working afterwards
+        pool.episode_timeout = 0.0
+        slow = search_spec("puct", {"num_simulations": 2000, "batch_size": 1})
+        assert pool.run([episode_task(slow, good[0], 0, cfg)]) == [None]
+        pool.episode_timeout = 60.0
+        assert all(ep is not None for ep in pool.run([episode_task(spec, p, i, cfg) for i, p in enumerate(good)]))

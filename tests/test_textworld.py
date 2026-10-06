@@ -197,8 +197,18 @@ def test_textworld_planner_loop_is_cut(tmp_path):
     resource.setrlimit(resource.RLIMIT_AS, (min(8 * 2 ** 30, hard if hard > 0 else 8 * 2 ** 30), hard))
     try:
         before = tw.runaway_plans
-        obs = tw.GameRunner(str(path)).observe(history)
+        runner = tw.GameRunner(str(path))
+        obs = runner.observe(history)
+        # keep playing from there: the dropped plan must not come back as a hang (a cut plan used to
+        # send compress_policy into a 100-deep tree that never finished)
+        later = history
+        for _ in range(10):
+            if obs.won or obs.lost or not obs.admissible:
+                break
+            later += (obs.admissible[0],)
+            obs = runner.observe(later)
     finally:
         resource.setrlimit(resource.RLIMIT_AS, (soft, hard))
-    assert tw.runaway_plans > before and obs.admissible and not obs.won
-    assert len(obs.policy) <= tw.FLATTEN_CAP
+    assert tw.runaway_plans > before
+    first = tw.GameRunner(str(path)).observe(history)
+    assert first.policy == () and first.admissible and not first.won  # plan dropped, game still playable

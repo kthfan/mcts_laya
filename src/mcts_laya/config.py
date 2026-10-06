@@ -108,6 +108,11 @@ class ParallelSection:
     workers: Any = "auto"
     max_wait_ms: float = 2.0  # how long a model call waits for more actors' requests
     cache_size: int = 50_000  # per-actor evaluation cache
+    # Safety nets: an episode running longer than this, or an actor exceeding this much address
+    # space (MemoryError), fails that one episode - dropped from self-play, a loss in evaluation - and
+    # the actor is replaced. Guards against environment bugs such as TextWorld planner loops.
+    episode_timeout_s: float = 1800.0
+    actor_memory_gb: float = 16.0  # 0 = no cap
 
 
 @dataclass
