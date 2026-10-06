@@ -105,6 +105,8 @@ cat runs/ablation/smoke/L2-goal/control-s0/summary.md
 - `final reward`、`best reward`：最後一輪與最佳一輪的 PUCT16 評估 reward。有 gate，所以最終權重不會比最佳權重差太多。
 - `gain vs warm start`：最後一輪減掉 warm start 的 reward。**這是主要指標**。
 - `greedy final`：不搜尋時網路本身的表現，用來看網路有沒有真的變強。
+- `final − control (paired)`：每個 seed 的 final reward 減掉 control 同一個 seed 的 final reward，再取平均。warm start 依 seed 而異，成對比較可以抵消這部分差異，3 個 seed 時比單純比平均可靠。
+- 只計入有 `done.json` 的 run；沒跑完的會另外列出（重下同一行 `run_ablation.py` 指令會補跑）。重啟過的 run 只採用最後一次的紀錄。
 - `gate accepted`：每個 seed 有幾輪 self-play 被 gate 接受（例如 `3/8`）。
 
 判讀方式（建議）：
