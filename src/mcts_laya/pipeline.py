@@ -274,8 +274,9 @@ class AlphaZeroLoop:
             samples = episode_to_samples(self.env, ep, sp.config, meta={"iteration": iteration}, policy_weight=w)
             if self._relabel_teacher is not None:
                 samples = relabel_with_teacher(self.env, self._relabel_teacher, ep, samples, sp.relabel_value)
-            self.replay.add(samples)
-            n_samples += len(samples)
+            if sp.add_to_replay:
+                self.replay.add(samples)
+                n_samples += len(samples)
         dt = time.time() - t0
         kept = [ep for ep, w in zip(episodes, weights) if w > 0]
         self.log({"kind": "selfplay", "iteration": iteration, "episodes": len(episodes),

@@ -60,6 +60,10 @@ class SelfPlaySection:
     # (D) DAgger: "teacher" relabels every visited state with the teacher's targets
     relabel: str = "none"
     relabel_value: str = "teacher"  # "teacher" or "outcome" (keep the self-play value target)
+    # False: self-play still runs (and is logged) but adds nothing to the replay buffer, so every
+    # iteration trains on the teacher data alone - the control for "is it self-play or just more
+    # training on the teacher data?"
+    add_to_replay: bool = True
 
 
 @dataclass

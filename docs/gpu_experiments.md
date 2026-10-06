@@ -11,6 +11,7 @@
 | `B-value-only` | self-play 只訓練 value，policy 保留 warm start 學到的 | 退步來自 policy 被模糊目標稀釋；更準的 value 能讓搜尋變好 |
 | `C-sims48` | self-play 用 48 次模擬（評估仍是 16 次） | 搜尋太淺，目標沒有比網路強 |
 | `AC-efficient-sims48`、`BC-value-only-sims48` | A / B 再加上 48 次模擬 | 兩種修正可以疊加 |
+| `T-teacher-only` | 每輪照樣訓練，但 replay buffer 只有 teacher 資料（self-play 照跑但不加入） | 進步來自「teacher 資料多訓練幾輪」而不是 self-play；**比較 self-play 有沒有用的基準** |
 | `D-dagger` | teacher 為 self-play 走過的每個狀態標註最佳動作與價值 | **不是**自我改進，是模仿學習；當作「如果有完美標註能到多好」的上限參考 |
 
 所有變體共用的設定都已經寫在各等級的設定檔裡：gate（每輪 PUCT16 reward 下降超過 0.02 就還原）、policy 目標溫度 0.25、保留全部 teacher 資料，以及每個 seed 相同的評估遊戲（成對比較）。
@@ -76,12 +77,15 @@ cat runs/ablation/smoke/L2-goal/control-s0/summary.md
 **第二輪（v2）建議順序**：第一輪在 L2-goal 已經接近上限，各變體分不出差異，所以直接跑較難的等級：
 
 ```bash
-# L3-goal、C1：control、A-efficient、C-sims48，各 3 個 seed（18 個 run）
-.venv/bin/python scripts/run_ablation.py configs/ablation/selfplay_textworld.yaml --only L3-goal C1 \
-    --variants control A-efficient C-sims48 --seeds 0 1 2 --jobs 2
-# （選配）銜接第一輪：L2-goal 的 control、A-efficient；以及 DAgger 的 value 假設
+# 1) L2-goal：self-play 本身有沒有幫助？T-teacher-only 每輪只用 teacher 資料重新訓練（不加 self-play 資料）
 .venv/bin/python scripts/run_ablation.py configs/ablation/selfplay_textworld.yaml --only L2-goal \
-    --variants control A-efficient D-dagger D-dagger-outcome --seeds 0 1 2 --jobs 2
+    --variants T-teacher-only control A-efficient --seeds 0 1 2 --jobs 2
+# 2) L3-goal、C1：同樣三個變體再加 C-sims48，各 3 個 seed（24 個 run）
+.venv/bin/python scripts/run_ablation.py configs/ablation/selfplay_textworld.yaml --only L3-goal C1 \
+    --variants T-teacher-only control A-efficient C-sims48 --seeds 0 1 2 --jobs 2
+# 3) （選配）DAgger 的 value 假設
+.venv/bin/python scripts/run_ablation.py configs/ablation/selfplay_textworld.yaml --only L2-goal \
+    --variants D-dagger D-dagger-outcome --seeds 0 1 2 --jobs 2
 ```
 
 以下是第一輪的分階段做法，保留作為參考：

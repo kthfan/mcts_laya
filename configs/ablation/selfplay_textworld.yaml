@@ -32,6 +32,9 @@ gpu_overrides:
 variants:
   control:                    # current setting: imitate successful self-play games (16 simulations)
     - selfplay.policy_filter=success
+  T-teacher-only:             # no self-play data: every iteration retrains on the teacher data alone
+    - selfplay.add_to_replay=false  # (self-play still runs, on fewer games, only for its statistics)
+    - selfplay.episodes_per_iteration=16
   A-efficient:                # only games efficient relative to the agent's own record
     - selfplay.policy_filter=efficient
     - selfplay.best_known_ratio=1.3
