@@ -1,6 +1,6 @@
 # Laya + MCTS：專案報告（架構、實驗與結果）
 
-> 涵蓋範圍：專案開始到 Phase 1a 第二輪消融實驗（2026-10-07）
+> 涵蓋範圍：專案開始到 Phase 1a 第二輪消融實驗與推論速度測試（2026-10-08）
 > 程式碼：分支 `claude/laya-mcts-project-planning-oj7zb4`
 > 相關文件：[`candidate_problems.md`](../candidate_problems.md)（為什麼選這些任務）、[`ROADMAP.md`](../ROADMAP.md)（階段目標）、[`docs/phase0_report.md`](phase0_report.md)（Phase 0 細節）、[`docs/gpu_experiments.md`](gpu_experiments.md)（GPU 實驗操作步驟）
 
@@ -19,6 +19,7 @@
 | 什麼情況下 self-play 沒有幫助？ | 模仿 teacher 就已經達到最優的關卡 | 每一步都有指示的 L1、L2，以及料理關卡 C1：warm start 後已接近理論最佳，self-play 與只用 teacher 資料的差距 ≤ 0.01 |
 | self-play 為什麼有幫助？ | 主要是讓**價值網路**變得有用，搜尋因此變強 | 只用 teacher 資料時，搜尋只比不搜尋多 +0.04；加入 self-play 後多 +0.21 |
 | 進階的 self-play 變體（只學有效率的局、更多模擬次數）有沒有更好？ | 沒有 | 和最簡單的版本差距 < 0.02，在雜訊範圍內 |
+| 搜尋要付出多少時間？ | 每步約 0.2–0.25 秒，是不搜尋的 15–19 倍；但模擬次數從 16 加到 64，每步只多 20% 時間 | L2-goal：greedy 每步 13 ms、成功率 0.70；PUCT16 206 ms、0.97；PUCT64 250 ms、1.00（§4.7） |
 | 目前的瓶頸 | self-play 第 1–2 輪就趨於飽和；L1、L2、L2-goal、C1 都已經沒有比較空間 | L3-goal 約 70% 的進步發生在第 1 輪 |
 
 **過程中最重要的工程結論**：需要 gate（只保留不退步的權重）、獨立的驗證集、平行對局（actor）才能讓 GPU 不閒置，以及對 TextWorld 本身的一個無限迴圈 bug 加上防護。
@@ -476,6 +477,29 @@ warm start 之後，所有變體、所有 seed 都是 100% 成功、平均 4.73 
 
 self-play 的幫助大小和「模仿 teacher 之後還剩多少空間」一致：只有需要自己探索的關卡，模仿留下了空間，self-play 才有東西可以學。
 
+### 4.7 推論速度：greedy 與 PUCT
+
+搜尋讓成績變好，但每一步都要多呼叫好幾次 Laya、多走好幾次環境。這一節量的是「部署時」的代價：只有一個 agent、一次玩一局（不用平行 actor），每一步要等多久。
+
+**設定**（`scripts/bench_inference.py`）：L2-goal 第二輪 control seed 0 的最終權重，H100（`cuda:0`），30 局測試遊戲，每個方法先玩 2 局暖機不計時。每個方法用全新的環境，每局開始前清空 Laya 的評估快取，所以方法之間不會共用彼此算過的結果。PUCT 用評估時的設定（每批 4 個葉節點、不加 Dirichlet 雜訊）。
+
+| 方法 | 成功率 | reward | 平均步數 | 成功局平均步數 | 每局秒數 | **每步 ms**（平均 / p50 / p95） | 相對 greedy | 每步模型呼叫 | 每步評估的列數 | 時間：模型 / 環境 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| greedy | 0.70 | 0.547 | 9.9 | 5.6 | 0.20 | **13** / 13 / 16 | 1.0× | 1.0 | 2.0 | 66% / 34% |
+| PUCT16 | 0.97 | 0.745 | 6.6 | 6.1 | 1.35 | **206** / 158 / 505 | 15.6× | 3.9 | 12.1 | 21% / 78% |
+| PUCT64 | 1.00 | 0.790 | 5.2 | 5.2 | 1.30 | **250** / 103 / 1086 | 19.0× | 6.5 | 17.8 | 24% / 75% |
+
+（原始數據：`docs/results/bench/l2-goal_control-s0.md`。每個局面要算兩列：一列 policy、一列 value，所以 greedy 每步 2 列。剩下的時間是搜尋本身的簿記。）
+
+**解讀**
+- **搜尋的代價是每步約 0.2 秒**，是 greedy 的 15–19 倍。換來的是成功率從 0.70 提高到 0.97–1.00。greedy 解出的局其實很有效率（5.6 步），問題是 30% 的局解不出來，一直走到 20 步的上限。
+- **模擬次數 ×4，每步時間只多 20%**（206 → 250 ms），每局的時間甚至少一點（1.35 → 1.30 秒），因為 PUCT64 用更少的步數解完（5.2 vs 6.6 步）。原因有兩個：
+  - Laya 的評估快取在一局之內保留：前一步搜尋時算過的局面，後面的步驟直接重用。PUCT64 每步只新評估約 9 個局面（17.8 列 ÷ 2），遠少於 64。
+  - 模擬走到已經完成任務的終局時不需要呼叫模型。L2-goal 只要 5 步，搜尋很快就看得到終點，之後很多模擬都落在終局上。所以每步只呼叫模型 6.5 次，而不是 64 ÷ 4 + 1 = 17 次。
+- **延遲集中在少數幾步**：PUCT64 的中位數只有 103 ms，比 PUCT16 的 158 ms 還快，但 p95 到 1.1 秒。多數步驟可以重用快取、很快就找到終局；少數步驟（例如快取還空著、終點還看不到的時候）要從頭探索。
+- **瓶頸是環境，不是 Laya**：搜尋時 75–78% 的時間花在 TextWorld 上（每走一步都要重播遊戲，見 §3.2 的實作重點），Laya 只占 21–24%。要讓搜尋更快，優先改善環境（例如減少重播），而不是加速模型。
+- **評估時多搜尋有用**：在這 30 局上，PUCT64 的 reward 0.790 幾乎等於 L2-goal 的理論最佳 0.795（每局都用 5 步解出），比 PUCT16 的 0.745 高 0.045。這只是 1 個 seed、30 局（雜訊約 ±0.04），還需要在 100 局測試集與 L3-goal 上確認（§7 第 1 項）。
+
 ---
 
 ## 5. 結論
@@ -483,7 +507,8 @@ self-play 的幫助大小和「模仿 teacher 之後還剩多少空間」一致�
 1. **Laya + MCTS 的 AlphaZero 式迴圈在文字任務上有效。** 在需要探索的 TextWorld 關卡上，self-play 帶來明確且可重現的進步，任務越難進步越大；在模仿 teacher 就能達到最優的關卡（L1、L2、C1）上則沒有差別，因為已經沒有改進空間（§4.6）。
 2. **進步的來源主要是價值網路。** teacher 只能教「最佳路線長什麼樣子」，教不出「這個局面有多糟」；self-play 補上了這一塊，讓搜尋真正發揮作用。這呼應 AlphaZero 的設計：搜尋的品質取決於價值估計。
 3. **簡單的設定就夠了。** 目前沒有任何進階變體勝過「成功局的搜尋分佈 + 銳化 + gate」。
-4. **目前的限制**：self-play 在 1–2 輪後就飽和；L1、L2、L2-goal、C1 都已經沒有比較空間，目前只有 L3-goal 還能分辨不同做法；gate 的驗證集只有 40 局，雜訊偏大。
+4. **搜尋的代價可以接受，而且多搜尋不一定更慢。** L2-goal 上搜尋每步約 0.2 秒（不搜尋的 15–19 倍），模擬次數 ×4 每步只多 20% 時間；時間主要花在 TextWorld 環境，而不是 Laya（§4.7）。
+5. **目前的限制**：self-play 在 1–2 輪後就飽和；L1、L2、L2-goal、C1 都已經沒有比較空間，目前只有 L3-goal 還能分辨不同做法；gate 的驗證集只有 40 局，雜訊偏大。
 
 ---
 
@@ -507,7 +532,7 @@ self-play 的幫助大小和「模仿 teacher 之後還剩多少空間」一致�
 
 依優先順序：
 
-1. **測試「評估時多搜尋」的效果**：用已訓練好的模型，以 16 / 32 / 64 / 128 次模擬評估。如果 self-play 訓練出的價值網路讓「搜尋越多、成績越好」，就是 AlphaZero 式「搜尋可以擴展」的核心證據，也能判斷 L3 的飽和是網路的限制還是搜尋預算的限制。不需要重新訓練，只需要新增一個評估指令。
+1. **測試「評估時多搜尋」的效果**：用已訓練好的模型，以 16 / 32 / 64 / 128 次模擬評估。如果 self-play 訓練出的價值網路讓「搜尋越多、成績越好」，就是 AlphaZero 式「搜尋可以擴展」的核心證據，也能判斷 L3 的飽和是網路的限制還是搜尋預算的限制。§4.7 的速度測試已經有初步跡象：L2-goal 上 PUCT64 比 PUCT16 高 0.045，幾乎達到理論最佳，而每步只多 20% 時間。下一步是在 L3-goal、100 局測試集、3 個 seed 上確認，並比較 T-teacher-only 和 control（如果只有 control 的成績隨搜尋增加，就更直接地證明 self-play 改善的是價值網路）。`bench_inference.py --sims 16 32 64 128` 可以同時量到成績與時間。
 2. **確認機制**：在 L3 上跑 B-value-only（self-play 只訓練 value）。如果它和 control 一樣好，就確定 self-play 的貢獻來自價值網路。
 3. **更難的任務**：C2（多食材、多房間的料理遊戲），或開始 Phase 1b 的 ALFWorld。
 4. **讓 self-play 持續進步**：較大的驗證集（降低 gate 的雜訊）、每輪更多局、逐步降低 teacher 資料的比重。
@@ -537,6 +562,10 @@ scripts/setup_env.sh --download                       # 建 venv、安裝、下�
 .venv/bin/mcts-laya tw-games --level L1 L2 --train 150 --eval 100 --val 40 --out data/textworld
 .venv/bin/python scripts/run_ablation.py configs/ablation/phase1a_full.yaml --jobs 2
 .venv/bin/python scripts/summarize_ablation.py runs/ablation/phase1a_full --reference T-teacher-only
+
+# 推論速度：greedy 與 PUCT（§4.7）
+.venv/bin/python scripts/bench_inference.py --run runs/ablation/selfplay_textworld_v2/L2-goal/control-s0 \
+    --problems 30 --sims 16 64 --out docs/results/bench/l2-goal_control-s0.md
 
 # 視覺化某個實驗
 .venv/bin/mcts-laya viz --run runs/ablation/selfplay_textworld_v2/L3-goal/control-s0 --problems 4
