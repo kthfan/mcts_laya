@@ -19,7 +19,7 @@
 | 角色 | 推薦問題 | 理由 |
 |---|---|---|
 | Phase 0：打通整條管線 | **A. 符號代數化簡**（或 B. Countdown / 24 點） | 模擬器幾天就能自己寫完，不需要外部資料，可以快速驗證「MCTS → 軟目標 → RLCD 微調 → 更強的 MCTS」這個迴圈 |
-| Phase 1：主線研究 | **C. TextWorld / Jericho** 或 **D. ALFWorld**；**E. WebShop** | 現成的文字模擬器，可列舉合法動作，支援存檔 / 還原，也有 LATS、Agent Q 等 MCTS + LM 的前例可以比較 |
+| Phase 1：主線研究 | **C. TextWorld / Jericho** 或 **D. ALFWorld**；**E. WebShop** | 現成的文字模擬器，可列舉合法動作，支援存檔 / 還原，也有 MCTS + LM 的前例可以比較（文字遊戲：MC-LAVE、MC-DML；ALFWorld：SEEA-R1；WebShop：LATS、Agent Q） |
 | Phase 2：最像 AlphaZero 的方向 | **G. 資安攻防（CybORG / CyberBattleSim）紅藍隊自我對弈** | 真正的雙人對抗加上自我對弈，也剛好對上 Laya 已經微調過的「security incidents」工作流程領域 |
 | 長期 / 高風險高報酬 | H. Lean 定理證明（Laya 只當價值網路 / 重排序器） | 獎勵可以完美驗證（AlphaProof 路線），但需要 LLM 生成 tactic，工程量很大 |
 
@@ -171,7 +171,7 @@ rows / episode ≈ L(步數) × N_sim × 2
   - `pip install textworld` / `jericho`。TextWorld 能**程序化生成**任意難度的遊戲（資料無限）；Jericho 收錄數十款經典 Z-machine 遊戲
   - **Jericho 原生支援 `get_state()` / `set_state()`**，正好滿足 MCTS 回溯的需求；TextWorld 可以用重播動作序列達到同樣效果
 - **finetune：中**：狀態是英文敘事，與 Laya 的預訓練分佈接近（優勢）。難點是長期依賴：歷史超過 512–1024 token 時需要摘要或結構化記憶；稀疏獎勵需要 TD(λ) 或中間獎勵塑形。
-- **前例**：MC!Q*BERT、Go-Explore for text games，以及多篇 MCTS + LM 用於文字遊戲的研究，基準可以比較。
+- **前例**：MC!Q*BERT、Go-Explore for text games；MCTS 方面有 MC-LAVE（MCTS + 語言動作價值估計，規劃與學習交替進行，在 Jericho 上測試）與 MC-DML（MCTS 以 LLM 當先驗，加上記憶機制，同樣在 Jericho 上測試），基準可以比較。
 
 ### D. 文字具身任務（ALFWorld / ScienceWorld）　★★★★☆
 
@@ -179,7 +179,7 @@ rows / episode ≈ L(步數) × N_sim × 2
 - **映射**：同 C。ALFWorld 每步的合法動作通常 10–40 個；ScienceWorld 的「動作模板 × 物件」組合可達數百甚至上千，**必須先用 embedding shortlist 或階層式 choice**（先選動詞再選物件）。
 - **資料集 / 模擬器：中（2–4 週）**：兩者都可以 pip 安裝，有 expert demonstration（ALFWorld 有 PDDL expert）可以當冷啟動資料。ALFWorld 建立在 TextWorld 上，存檔 / 還原同 C；ScienceWorld 要確認存檔 API，否則只能重播。
 - **finetune：中**：ALFWorld 有現成的 expert 軌跡可做 SL 暖身，是很好的 AlphaGo 式「先模仿再自我改進」設定；ScienceWorld 難度高很多（動作空間大、步數長）。
-- **前例**：ReAct、Reflexion、LATS 都用過 ALFWorld，方便和 LLM-based agent 比較「小型 System 1 + 搜尋 vs 大型 LLM」。
+- **前例**：ReAct、Reflexion 都用過 ALFWorld，方便和 LLM-based agent 比較「小型 System 1 + 搜尋 vs 大型 LLM」。（LATS 沒有測 ALFWorld，它的實驗是 HotPotQA、WebShop、程式與 Game of 24。）ALFWorld 上和本專案更接近的是：原論文的 BUTLER（小型模型，用 PDDL expert + DAgger 訓練，測試時用 beam search）、SEEA-R1（7B 模型以 MCTS 收集樹狀軌跡再做 Tree-GRPO 自我演化），以及 ETO（從探索得到的失敗軌跡做 DPO）。
 
 ### E. 網購 / 網頁導覽（WebShop；MiniWoB++、BrowserGym、WebArena）　★★★★☆
 
@@ -280,6 +280,8 @@ rows / episode ≈ L(步數) × N_sim × 2
 |---|---|
 | **Tree of Thoughts、RAP（Reasoning via Planning）、LATS（Language Agent Tree Search）** | LLM 當 policy / value 的樹搜尋；本專案可以定位成「用 Laya 取代昂貴的 LLM 評估」，直接比較成本與準確率 |
 | **Agent Q**（MCTS + 自我批評 + DPO） | 在 WebShop 與真實網站上的 MCTS 代理，E 的直接對照組 |
+| **MC-LAVE、MC-DML** | 文字遊戲（Jericho）上的 MCTS：MC-LAVE 學一個語言動作價值估計來引導探索，MC-DML 用 LLM 當先驗並加上記憶。C 的直接對照組 |
+| **SEEA-R1** | ALFWorld 上以 MCTS 收集樹狀軌跡、再用 Tree-GRPO 訓練的自我演化 agent（7B 模型）。D 的直接對照組 |
 | **rStar-Math / AlphaZero-like TS-LLM** | MCTS + process reward model 的自我進化迴圈；Laya 的 value head 等同一個便宜的 PRM |
 | **AlphaProof / AlphaGeometry / HTPS** | 形式化數學上的搜尋 + 學習（H 的路線圖） |
 | **「LLM 提案 + Laya 評估」混合架構**（System 2 提案、System 1 篩選） | 解決 L1：用小型生成 LLM（例如透過 vLLM 部署的開源模型）提出候選動作，由 Laya 給先驗與價值，MCTS 統合。這對 F、H、I、J、K 是必要的 |
@@ -343,7 +345,7 @@ flowchart LR
 **Phase 1：主線文字代理任務（6–8 週）**
 - 在 C/D（推薦 ALFWorld，有 expert 軌跡）或 E（WebShop，有官方瀏覽器微調經驗可以借用）中擇一。
 - 重點實驗：模擬次數與成功率的關係、Laya checkpoint 比較（`laya` vs `laya-multilingual`）、凍結 encoder vs 全量微調、Reanalyse 的效益。
-- 對照組：ReAct / LATS（LLM 作 policy / value），比較成功率、**每任務成本、延遲**。Laya 的賣點是便宜與快速。
+- 對照組：LLM 作 policy / value 的方法，比較成功率、**每任務成本、延遲**。ALFWorld 用 ReAct / Reflexion / SEEA-R1，小模型基準用 BUTLER；TextWorld / Jericho 用 MC-DML；WebShop 用 LATS / Agent Q。Laya 的賣點是便宜與快速。
 
 **Phase 2：對抗自我對弈或領域應用（8–12 週）**
 - G：紅藍雙方各一個 Laya，加上 league training，產出真正 AlphaZero 式的對抗學習曲線（Elo）。
@@ -408,6 +410,8 @@ flowchart TB
 **LLM + 樹搜尋**
 - Yao et al., *Tree of Thoughts*（2023）；Hao et al., *RAP*（2023）；Zhou et al., *LATS*（2023）
 - Putta et al., *Agent Q*（2024）；Guan et al., *rStar-Math*（2025）；Feng et al., *TS-LLM*（2023）
+- Jang et al., *Monte-Carlo Planning and Learning with Language Action Value Estimates*（MC-LAVE, ICLR 2021）；Shi et al., *Monte Carlo Planning with Large Language Model for Text-Based Game Agents*（MC-DML, ICLR 2025）
+- *SEEA-R1: Tree-Structured Reinforcement Fine-Tuning for Self-Evolving Embodied Agents*（2025, arXiv 2506.21669）；Song et al., *Trial and Error: Exploration-Based Trajectory Optimization for LLM Agents*（ETO, ACL 2024）
 - DeepMind, *AlphaProof*（2024）；Lample et al., *HyperTree Proof Search*（2022）
 
 **環境與資料集**
