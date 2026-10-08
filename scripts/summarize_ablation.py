@@ -100,9 +100,11 @@ def load(run_dir: Path, label: str):
         "warm_reward": warm and warm["reward"], "final_reward": final and final["reward"],
         "best_reward": max([r["reward"] for r in sp] + ([warm["reward"]] if warm else [])),
         "warm_success": warm and warm["success"], "final_success": final and final["success"],
-        "final_moves": final and final["moves"],
+        "warm_moves": warm and warm["moves"], "final_moves": final and final["moves"],
         "warm_success_moves": success_moves(warm, cap), "final_success_moves": success_moves(final, cap),
         "greedy_warm": greedy_w and greedy_w["reward"], "greedy_final": greedy_sp[-1]["reward"] if greedy_sp else None,
+        "greedy_warm_success": greedy_w and greedy_w["success"],
+        "greedy_final_success": greedy_sp[-1]["success"] if greedy_sp else None,
         "gate_accepted": f"{sum(g['accepted'] for g in gates)}/{len(gates)}" if gates else "",
         "selfplay_success": st.mean(r["success"] for r in sps) if sps else None,
         "policy_episodes": st.mean(r.get("policy_episodes") or 0 for r in sps) if sps else None,
@@ -135,7 +137,8 @@ def main(argv=None) -> int:
         print(f"no runs under {root}")
         return 1
     cols = ["level", "variant", "seed", "done", "iterations", "attempts", "warm_reward", "final_reward", "best_reward", "warm_success",
-            "final_success", "final_moves", "warm_success_moves", "final_success_moves", "greedy_warm", "greedy_final", "gate_accepted", "selfplay_success",
+            "final_success", "warm_moves", "final_moves", "warm_success_moves", "final_success_moves", "greedy_warm", "greedy_final",
+            "greedy_warm_success", "greedy_final_success", "gate_accepted", "selfplay_success",
             "policy_episodes", "uniform_baseline"]
     with open(root / "runs.csv", "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=cols)
@@ -166,6 +169,15 @@ def main(argv=None) -> int:
                      f"{ms([r['best_reward'] for r in rs])} | {ms(gains)} | "
                      f"{'' if variant == args.reference else ms(paired)} | {ms([r['greedy_final'] for r in rs])} | "
                      f"{', '.join(r['gate_accepted'] for r in rs)} |")
+    lines += ["", f"## Warm start ({args.label}, before self-play)", "",
+              "| level | variant | seeds | warm reward | warm success | warm moves | success moves | greedy warm | "
+              "greedy warm success | greedy final success |",
+              "|---|---|---|---|---|---|---|---|---|---|"]
+    for (level, variant), rs in sorted(groups.items()):
+        lines.append(f"| {level} | {variant} | {len(rs)} | {ms([r['warm_reward'] for r in rs])} | "
+                     f"{ms([r['warm_success'] for r in rs], 2)} | {ms([r['warm_moves'] for r in rs], 1)} | "
+                     f"{ms([r['warm_success_moves'] for r in rs], 1)} | {ms([r['greedy_warm'] for r in rs])} | "
+                     f"{ms([r['greedy_warm_success'] for r in rs], 2)} | {ms([r['greedy_final_success'] for r in rs], 2)} |")
     skipped = [r for r in rows if r not in used]
     if skipped:
         lines += ["", "Not averaged (no `done.json`; rerun them with the same command, finished runs are skipped):",

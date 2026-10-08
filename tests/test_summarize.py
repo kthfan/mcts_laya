@@ -34,3 +34,7 @@ def test_summary_derives_success_moves_for_old_textworld_runs(tmp_path):
     # L3-goal fails only at the 30-step cap: (10.83 - 0.12 * 30) / 0.88 and (20 - 0.5 * 30) / 0.5
     assert abs(float(rec["final_success_moves"]) - 8.2159) < 1e-3
     assert abs(float(rec["warm_success_moves"]) - 10.0) < 1e-9
+    assert float(rec["warm_moves"]) == 20.0
+    summary = (tmp_path / "summary.md").read_text()
+    assert "## Warm start (puct16, before self-play)" in summary
+    assert "| L3-goal | control | 1 | 0.300 | 0.50 | 20.0 | 10.0 |" in summary
