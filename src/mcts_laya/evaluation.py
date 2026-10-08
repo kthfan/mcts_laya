@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from typing import Any, Dict, List, Sequence
+from typing import Any, Dict, List, Optional, Sequence
 
 import numpy as np
 
@@ -28,12 +28,20 @@ def evaluate_searcher(env: Environment, searcher: Searcher, problems: Sequence[A
     return summarize_episodes(episodes, time.time() - t0)
 
 
-def summarize_episodes(episodes, seconds: float) -> Dict[str, float]:
+def success_moves(episodes) -> Optional[float]:
+    """Mean length of the successful episodes (None if none succeeded)."""
+    won = [e.length for e in episodes if e.success]
+    return float(np.mean(won)) if won else None
+
+
+def summarize_episodes(episodes, seconds: float) -> Dict[str, Any]:
     return {
         "success": float(np.mean([e.success for e in episodes])),
         # mean outcome mapped to [0, 1]; for single-agent envs this is the mean reward
         "reward": float(np.mean([(e.final_value + 1.0) / 2.0 for e in episodes])),
+        # all episodes: a failed one counts with the moves it used (TextWorld: up to the step cap)
         "moves": float(np.mean([e.length for e in episodes])),
+        "success_moves": success_moves(episodes),  # successful episodes only
         "seconds": seconds,
         "problems": len(episodes),
     }

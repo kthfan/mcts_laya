@@ -122,7 +122,7 @@ cat runs/ablation/smoke/L2-goal/control-s0/summary.md
 ```
 
 表格中的欄位：
-- `final reward`：最終保留的權重在 100 局測試遊戲上的 PUCT16 reward（**主要結果**）。`best reward`：各輪保留權重在測試遊戲上的最高值；因為是從多次評估中挑最高的，會略為偏高，僅供參考。
+- `final reward`：最終保留的權重在 100 局測試遊戲上的 PUCT16 reward（**主要結果**）。`final success`：成功率；`final moves`：所有測試局的平均步數（失敗局以用掉的步數計，TextWorld 的 L 關卡就是步數上限）；`success moves`：只算成功局的平均步數（舊紀錄在 L 關卡上由前兩項換算，料理關卡無法換算時留白）。`best reward`：各輪保留權重在測試遊戲上的最高值；因為是從多次評估中挑最高的，會略為偏高，僅供參考。
 - `gain vs warm start`：最後一輪減掉 warm start 的 reward。**這是主要指標**。
 - `greedy final`：不搜尋時網路本身的表現，用來看網路有沒有真的變強。
 - `final − control (paired)`：每個 seed 的 final reward 減掉 control 同一個 seed 的 final reward，再取平均。warm start 依 seed 而異，成對比較可以抵消這部分差異，3 個 seed 時比單純比平均可靠。

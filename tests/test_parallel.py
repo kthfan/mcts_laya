@@ -48,6 +48,7 @@ def test_loop_runs_with_actors(tiny_checkpoint, tmp_path):
     sp = [r for r in records if r["kind"] == "selfplay"]
     assert sp and sp[0]["workers"] == 2 and sp[0]["episodes"] == 4 and sp[0]["rows_per_batch"] > 0
     assert 0 <= sp[0]["actor_wait"] <= 1 and sp[0]["model_ms_per_batch"] > 0
+    assert "success_moves" in sp[0] and all("success_moves" in r for r in records if r["kind"] == "eval")
     assert {r["label"] for r in records if r["kind"] == "eval"} >= {"greedy", "puct16", "uniform-puct16"}
 
 

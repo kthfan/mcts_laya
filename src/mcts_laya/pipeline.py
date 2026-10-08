@@ -28,7 +28,7 @@ import yaml
 
 from . import progress
 from .config import EvalSearch, ExperimentConfig, config_to_dict
-from .evaluation import evaluate_searcher, format_table, summarize_episodes
+from .evaluation import evaluate_searcher, format_table, success_moves, summarize_episodes
 from .evaluators.base import Evaluator
 from .evaluators.laya_evaluator import LayaEvaluator, load_agent
 from .registry import ENVIRONMENTS, EVALUATORS, SEARCHERS, TEACHERS
@@ -295,6 +295,7 @@ class AlphaZeroLoop:
         self.log({"kind": "selfplay", "iteration": iteration, "episodes": len(episodes),
                   "success": float(np.mean([e.success for e in episodes])),
                   "moves": float(np.mean([e.length for e in episodes])),
+                  "success_moves": success_moves(episodes),
                   "policy_episodes": len(kept) if self._relabel_teacher is None else len(episodes),
                   "policy_moves": float(np.mean([e.length for e in kept])) if kept else None,
                   "samples": n_samples, "replay": len(self.replay), "seconds": dt,
@@ -347,6 +348,8 @@ class AlphaZeroLoop:
             row[f"{r['label']}.success"] = r["success"]
             row[f"{r['label']}.reward"] = r["reward"]
             row[f"{r['label']}.moves"] = r["moves"]
+            if r.get("success_moves") is not None:
+                row[f"{r['label']}.success_moves"] = r["success_moves"]
         return list(rows.values())
 
     def milestones(self) -> List[Dict[str, Any]]:
@@ -388,7 +391,7 @@ class AlphaZeroLoop:
         sp = [r for r in self.history if r.get("kind") == "selfplay"]
         if sp:
             lines += ["## Self-play", "",
-                      format_table(sp, ["iteration", "episodes", "success", "moves", "policy_episodes",
+                      format_table(sp, ["iteration", "episodes", "success", "moves", "success_moves", "policy_episodes",
                                         "policy_moves", "samples", "seconds", "rows_per_second", "workers",
                                         "rows_per_batch", "model_busy", "model_ms_per_batch",
                                         "actor_wait"]), ""]

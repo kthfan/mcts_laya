@@ -32,6 +32,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
 from mcts_laya import progress  # noqa: E402
+from mcts_laya.evaluation import success_moves  # noqa: E402
 from mcts_laya.registry import ENVIRONMENTS, SEARCHERS  # noqa: E402
 from mcts_laya.runtime import limit_cpus  # noqa: E402
 from mcts_laya.selfplay.actor import SelfPlayConfig, play_episode  # noqa: E402
@@ -93,7 +94,8 @@ def bench_method(ctx: VizContext, label: str, searcher_name: str, params: Dict[s
         "games": len(episodes),
         "success": float(np.mean([ep.success for ep in episodes])),
         "reward": float(np.mean([(ep.final_value + 1) / 2 for ep in episodes])),
-        "moves": moves / len(episodes),
+        "moves": moves / len(episodes),  # all games (a failed one counts the moves it used)
+        "success_moves": success_moves(episodes),  # successful games only
         "s_per_game": total / len(episodes),
         "ms_per_move": float(lat.mean()) if len(lat) else 0.0,
         "ms_per_move_p50": float(np.percentile(lat, 50)) if len(lat) else 0.0,
@@ -107,17 +109,19 @@ def bench_method(ctx: VizContext, label: str, searcher_name: str, params: Dict[s
 
 def to_markdown(rows: List[Dict[str, Any]], header: str) -> str:
     base = next((r for r in rows if r["method"] == "greedy"), rows[0])
-    cols = ["method", "success", "reward", "moves", "s/game", "ms/move", "p50", "p95", "× greedy",
+    cols = ["method", "success", "reward", "moves", "success moves", "s/game", "ms/move", "p50", "p95", "× greedy",
             "model calls/move", "rows/move", "model %", "env %"]
     lines = [header, "", "| " + " | ".join(cols) + " |", "|" + "---|" * len(cols)]
     for r in rows:
         lines.append("| " + " | ".join([
             r["method"], f"{r['success']:.2f}", f"{r['reward']:.3f}", f"{r['moves']:.1f}",
+            "" if r["success_moves"] is None else f"{r['success_moves']:.1f}",
             f"{r['s_per_game']:.2f}", f"{r['ms_per_move']:.0f}", f"{r['ms_per_move_p50']:.0f}",
             f"{r['ms_per_move_p95']:.0f}", f"{r['ms_per_move'] / max(base['ms_per_move'], 1e-9):.1f}",
             f"{r['model_calls_per_move']:.1f}", f"{r['rows_per_move']:.1f}",
             f"{100 * r['model_share']:.0f}", f"{100 * r['env_share']:.0f}"]) + " |")
-    lines += ["", "model % / env %: share of the game time spent in Laya calls (tokenisation + forward) / in "
+    lines += ["", "moves: all games (a failed game counts the moves it used); success moves: successful games only. "
+              "model % / env %: share of the game time spent in Laya calls (tokenisation + forward) / in "
               "environment steps; the rest is search bookkeeping. × greedy: latency per move relative to greedy."]
     return "\n".join(lines)
 
