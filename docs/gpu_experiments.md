@@ -148,3 +148,18 @@ tar czf ablation_results.tgz runs/ablation/selfplay_textworld_v2/summary.md runs
 ```
 
 把 `ablation_results.tgz` 放進 repo（例如 `docs/results/ablation/`）或貼回對話，我就能接著分析並決定下一步。
+
+## 附錄：推論速度比較（greedy vs PUCT）
+
+`scripts/bench_inference.py` 讓同一個模型在同一批測試遊戲上，一次一局地（模擬實際部署）分別用 greedy 與不同模擬次數的 PUCT 玩，回報成績與速度：每局秒數、每步延遲（平均、p50、p95）、相對 greedy 的倍數、每步模型呼叫次數與列數，以及時間花在模型（tokenization + 前向計算）和環境（TextWorld 重播）的比例。每個方法使用新的環境、每局清空模型快取，前幾局只暖機不計時。
+
+```bash
+# 已訓練的模型（實驗目錄裡的 checkpoints/final）
+.venv/bin/python scripts/bench_inference.py --run runs/ablation/selfplay_textworld_v2/L2-goal/control-s0 \
+    --device cuda --problems 30 --sims 16 64 --out runs/bench/l2-goal-control-s0-cuda.md
+# 原始（未微調）的 Laya
+.venv/bin/python scripts/bench_inference.py --config configs/textworld/l2-goal.yaml \
+    --device cuda --problems 30 --sims 16 64 --out runs/bench/l2-goal-raw-cuda.md
+```
+
+速度數字受機器負載影響很大；共用機器上請在 GPU 空閒時量，並用 `--cpus N` 固定核心數。
