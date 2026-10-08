@@ -179,7 +179,7 @@ rows / episode ≈ L(步數) × N_sim × 2
 - **映射**：同 C。ALFWorld 每步的合法動作通常 10–40 個；ScienceWorld 的「動作模板 × 物件」組合可達數百甚至上千，**必須先用 embedding shortlist 或階層式 choice**（先選動詞再選物件）。
 - **資料集 / 模擬器：中（2–4 週）**：兩者都可以 pip 安裝，有 expert demonstration（ALFWorld 有 PDDL expert）可以當冷啟動資料。ALFWorld 建立在 TextWorld 上，存檔 / 還原同 C；ScienceWorld 要確認存檔 API，否則只能重播。
 - **finetune：中**：ALFWorld 有現成的 expert 軌跡可做 SL 暖身，是很好的 AlphaGo 式「先模仿再自我改進」設定；ScienceWorld 難度高很多（動作空間大、步數長）。
-- **前例**：ReAct、Reflexion 都用過 ALFWorld，方便和 LLM-based agent 比較「小型 System 1 + 搜尋 vs 大型 LLM」。（LATS 沒有測 ALFWorld，它的實驗是 HotPotQA、WebShop、程式與 Game of 24。）ALFWorld 上和本專案更接近的是：原論文的 BUTLER（小型模型，用 PDDL expert + DAgger 訓練，測試時用 beam search）、SEEA-R1（7B 模型以 MCTS 收集樹狀軌跡再做 Tree-GRPO 自我演化），以及 ETO（從探索得到的失敗軌跡做 DPO）。
+- **前例**：ReAct、Reflexion 都用過 ALFWorld，方便和 LLM-based agent 比較「小型 System 1 + 搜尋 vs 大型 LLM」。（LATS 沒有測 ALFWorld，它的實驗是 HotPotQA、WebShop、程式與 Game of 24。）ALFWorld 上和本專案更接近的是：原論文的 BUTLER（小型模型，用規則式 expert + DAgger 訓練，測試時用 beam search）、SEEA-R1（7B 模型以 MCTS 收集樹狀軌跡再做 Tree-GRPO 自我演化），以及 ETO（從探索得到的失敗軌跡做 DPO）。
 
 ### E. 網購 / 網頁導覽（WebShop；MiniWoB++、BrowserGym、WebArena）　★★★★☆
 
