@@ -25,7 +25,7 @@ def evaluate_searcher(env: Environment, searcher: Searcher, problems: Sequence[A
         bar.update(1)
         bar.set_postfix(success=float(np.mean([e.success for e in episodes])))
     bar.close()
-    return summarize_episodes(episodes, time.time() - t0)
+    return summarize_episodes(episodes, time.time() - t0, env)
 
 
 def success_moves(episodes) -> Optional[float]:
@@ -34,8 +34,19 @@ def success_moves(episodes) -> Optional[float]:
     return float(np.mean(won)) if won else None
 
 
-def summarize_episodes(episodes, seconds: float) -> Dict[str, Any]:
-    return {
+def success_by_category(env: Optional[Environment], episodes) -> Optional[Dict[str, float]]:
+    """Success rate per problem category (ALFWorld: task type), for environments that define one."""
+    category = getattr(env, "category", None)
+    if category is None or not episodes:
+        return None
+    groups: Dict[str, List[bool]] = {}
+    for e in episodes:
+        groups.setdefault(category(e.initial_state), []).append(bool(e.success))
+    return {k: float(np.mean(v)) for k, v in sorted(groups.items())}
+
+
+def summarize_episodes(episodes, seconds: float, env: Optional[Environment] = None) -> Dict[str, Any]:
+    r = {
         "success": float(np.mean([e.success for e in episodes])),
         # mean outcome mapped to [0, 1]; for single-agent envs this is the mean reward
         "reward": float(np.mean([(e.final_value + 1.0) / 2.0 for e in episodes])),
@@ -45,6 +56,10 @@ def summarize_episodes(episodes, seconds: float) -> Dict[str, Any]:
         "seconds": seconds,
         "problems": len(episodes),
     }
+    by_category = success_by_category(env, episodes)
+    if by_category is not None:
+        r["by_category"] = by_category
+    return r
 
 
 def format_table(rows: List[Dict[str, Any]], columns: Sequence[str]) -> str:

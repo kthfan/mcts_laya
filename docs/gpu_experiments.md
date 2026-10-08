@@ -165,3 +165,21 @@ tar czf ablation_results.tgz runs/ablation/selfplay_textworld_v2/summary.md runs
 ```
 
 速度數字受機器負載影響很大；共用機器上請在 GPU 空閒時量，並用 `--cpus N` 固定核心數。
+
+## 附錄：Phase 1b ALFWorld
+
+評估、決策與實作細節見 [`docs/alfworld.md`](alfworld.md)。
+
+```bash
+.venv/bin/pip install -e ".[dev,alfworld]"                  # alfworld 0.4.2 + textworld[pddl]（編譯 fast-downward 約 1 分鐘）
+.venv/bin/mcts-laya alfworld-data --out data/alfworld       # 下載 36 MB，建立 train / val / valid_seen / valid_unseen
+.venv/bin/python -m pytest tests/test_alfworld.py           # 約 1 分鐘
+# 第一次：一個 seed（control 與 T-teacher-only），回報 summary.md 與每個階段的時間
+.venv/bin/python scripts/run_ablation.py configs/ablation/alfworld.yaml --seeds 0
+.venv/bin/python scripts/summarize_ablation.py runs/ablation/alfworld --reference T-teacher-only
+```
+
+- 主要測試集是 valid_unseen 全部 134 局；valid_seen 140 局只在 warm start 與最後評估（`summary.md` 的「Other test splits」）。gate 用從訓練集保留的 60 局。
+- 各任務類型的成功率在 `summary.md` 的「Success by category」。
+- teacher 資料由多個程序產生（`teacher.workers: auto`，規劃器每個狀態約 1 秒）；其他設定與 TextWorld 第二輪相同。
+- 每列最長約 1,280 tokens（TextWorld 的 2 倍），所以 `evaluator.max_rows` 用 32。GPU 記憶體不足時再降低；GPU 空閒很多時可以試 64。

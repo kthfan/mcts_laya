@@ -42,6 +42,20 @@ def _cmd_tw_games(args) -> None:
               f"{len(m['games'].get('val', []))} val -> {d}")
 
 
+def _cmd_alfworld_data(args) -> None:
+    from collections import Counter
+
+    from .envs.alfworld_env import build_manifest, download_games, task_type
+
+    if not args.no_download:
+        download_games(args.out, force=args.force)
+    m = build_manifest(args.out, n_val=args.val, seed=args.seed)
+    for split, games in m["splits"].items():
+        types = Counter(task_type(g) for g in games)
+        print(f"{split:13s} {len(games):5d} games  " + ", ".join(f"{t} {n}" for t, n in sorted(types.items())))
+    print(f"-> {args.out}/manifest.json")
+
+
 def _viz_context(args):
     from .viz.context import VizContext
 
@@ -142,6 +156,14 @@ def main(argv=None) -> None:
     g.add_argument("--workers", type=int, default=None, help="parallel compilers (default: the CPU limit, at most 8)")
     g.add_argument("--seed", type=int, default=0)
     g.set_defaults(func=_cmd_tw_games)
+
+    a = sub.add_parser("alfworld-data", help="download ALFWorld's text games and index the splits")
+    a.add_argument("--out", default="data/alfworld")
+    a.add_argument("--val", type=int, default=60, help="training games held out as the gate's validation split")
+    a.add_argument("--seed", type=int, default=0, help="seed of the validation split")
+    a.add_argument("--no-download", action="store_true", help="only (re)build manifest.json from games on disk")
+    a.add_argument("--force", action="store_true", help="download again even if games are present")
+    a.set_defaults(func=_cmd_alfworld_data)
 
     r = sub.add_parser("run", help="run an AlphaZero experiment from a YAML config")
     r.add_argument("config")

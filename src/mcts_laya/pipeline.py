@@ -80,6 +80,11 @@ class AlphaZeroLoop:
         if cfg.eval.gate_problems > 0:
             self.val_problems = self.env.sample_problems(random.Random(cfg.eval.gate_seed), cfg.eval.gate_problems,
                                                          split=cfg.eval.gate_split)
+        if set(cfg.eval.extra_splits) & {"eval", "val"}:
+            raise ValueError("eval.extra_splits names further test splits; 'eval' and 'val' are measured already")
+        self.extra_problems = {split: self.env.sample_problems(random.Random(cfg.eval.seed), cfg.eval.problems,
+                                                               split=split)
+                               for split in cfg.eval.extra_splits}
         self._kept_test: Optional[Dict[str, Dict[str, float]]] = None  # test results of the kept weights
         self.history: List[Dict[str, Any]] = []
         self.best_metric: Optional[float] = None
@@ -138,12 +143,16 @@ class AlphaZeroLoop:
         return EVALUATORS.build(spec.evaluator, **spec.evaluator_params)
 
     def evaluate(self, iteration: int, stage: str, specs: List[EvalSearch], split: str = "eval") -> Dict[str, Dict[str, float]]:
-        """Run `specs` on the test problems (`split="eval"`) or on the gate's validation problems."""
-        problems, seed = ((self.val_problems, self.cfg.eval.gate_seed) if split == "val"
-                          else (self.eval_problems, self.cfg.eval.seed))
+        """Run `specs` on the test problems (`split="eval"`), the gate's validation problems ("val") or an
+        extra test split (`eval.extra_splits`)."""
+        if split == "val":
+            problems, seed = self.val_problems, self.cfg.eval.gate_seed
+        else:
+            problems, seed = self.extra_problems.get(split, self.eval_problems), self.cfg.eval.seed
         results = {}
         for spec in specs:
-            desc = f"{self._tag(iteration)} {'gate' if split == 'val' else 'eval'} {stage} {spec.label}"
+            kind = {"val": "gate", "eval": "eval"}.get(split, f"eval {split}")
+            desc = f"{self._tag(iteration)} {kind} {stage} {spec.label}"
             pool = self.actors()
             if pool is not None:
                 cfg = SelfPlayConfig(max_moves=self.cfg.eval.max_moves, add_noise=False, action_selection="search")
@@ -156,7 +165,7 @@ class AlphaZeroLoop:
                 # a failed episode (actor error / timeout, see ActorPool) counts as a loss at the move cap
                 episodes = [ep if ep is not None else Episode(initial_state=p, final_value=-1.0)
                             for ep, p in zip(played, problems)]
-                r = summarize_episodes(episodes, time.time() - t0)
+                r = summarize_episodes(episodes, time.time() - t0, self.env)
                 if failed:
                     r["failed_episodes"] = failed
                     r["moves"] = float(np.mean([ep.length if ep is not None else self.cfg.eval.max_moves
@@ -168,6 +177,11 @@ class AlphaZeroLoop:
             results[spec.label] = r
             self.log({"kind": "eval", "iteration": iteration, "stage": stage, "label": spec.label, "split": split, **r})
         return results
+
+    def evaluate_extra(self, iteration: int, stage: str) -> None:
+        """The current (kept) weights on each of `eval.extra_splits`."""
+        for split in self.cfg.eval.extra_splits:
+            self.evaluate(iteration, stage, self.cfg.eval.searches, split=split)
 
     def _gate_spec(self) -> EvalSearch:
         label = self.cfg.gate.metric.partition(".")[0]
@@ -243,7 +257,11 @@ class AlphaZeroLoop:
     def warm_start(self) -> None:
         t = self.cfg.teacher
         teacher = TEACHERS.build(self.cfg.env.name, self.env, explore=t.explore)
-        samples = teacher.generate(self.py_rng, t.problems, desc="it 0 teacher data")
+        workers = t.workers
+        if isinstance(workers, str) and workers == "auto":
+            workers = min(available_cpus() - 1, 32)
+        samples = teacher.generate(self.py_rng, t.problems, desc="it 0 teacher data", workers=int(workers or 0),
+                                   env_spec=(self.cfg.env.name, dict(self.cfg.env.params)))
         save_samples(str(self.out / "teacher_samples.jsonl"), samples)
         metrics = self.trainer.train(samples, epochs=t.epochs, desc="it 0 warm-start train")
         self.evaluator.clear_cache()
@@ -324,6 +342,7 @@ class AlphaZeroLoop:
             self.warm_start()
             self.best_metric = None  # the warm start defines the gate's reference
             self.checkpoint_eval(0, "warmstart")
+            self.evaluate_extra(0, "warmstart")
         self.write_summary()
         for it in range(1, cfg.iterations + 1):
             self.self_play(it)
@@ -332,6 +351,8 @@ class AlphaZeroLoop:
             self._save(it)
             self.write_summary()
         self._save(cfg.iterations, final=True)
+        if cfg.iterations > 0:
+            self.evaluate_extra(cfg.iterations, "final")
         self.write_summary()
         (self.out / "done.json").write_text(json.dumps({"finished": time.time(), "iterations": cfg.iterations}))
         return self.history
@@ -341,7 +362,7 @@ class AlphaZeroLoop:
         """One row per (iteration, stage) with `<label>.<metric>` columns."""
         rows: Dict[tuple, Dict[str, Any]] = {}
         for r in self.history:
-            if r.get("kind") != "eval" or r["stage"] == "baseline" or r.get("split") == "val":
+            if r.get("kind") != "eval" or r["stage"] == "baseline" or r.get("split", "eval") != "eval":
                 continue
             key = (r["iteration"], r["stage"])
             row = rows.setdefault(key, {"iteration": r["iteration"], "stage": r["stage"]})
@@ -376,6 +397,20 @@ class AlphaZeroLoop:
                            "value": f"{last[key]:.3f} vs {b:.3f}", "pass": last[key] > b})
         return checks
 
+    def _category_table(self) -> List[str]:
+        """Success per category (ALFWorld task type) of the latest evaluation of each split and label."""
+        latest: Dict[tuple, Dict[str, Any]] = {}
+        for r in self.history:
+            if r.get("kind") == "eval" and r.get("by_category") and r.get("split", "eval") != "val":
+                latest[(r.get("split", "eval"), r["label"])] = r
+        if not latest:
+            return []
+        cats = sorted({c for r in latest.values() for c in r["by_category"]})
+        rows = [{"split": split, "stage": f"{r['stage']} (it {r['iteration']})", "label": label, "all": r["success"],
+                 **r["by_category"]} for (split, label), r in sorted(latest.items())]
+        return ["## Success by category (latest evaluation)", "",
+                format_table(rows, ["split", "stage", "label", "all"] + cats), ""]
+
     def write_summary(self) -> None:
         lines = [f"# {self.cfg.name}", "", f"- env: `{self.cfg.env.name}` {self.cfg.env.params}",
                  f"- checkpoint: `{self.cfg.model.checkpoint}`", f"- search: `{self.cfg.search.name}` "
@@ -388,6 +423,12 @@ class AlphaZeroLoop:
         if curve:
             cols = ["iteration", "stage"] + sorted({k for r in curve for k in r if "." in k})
             lines += ["## Learning curve", "", format_table(curve, cols), ""]
+        extra = [dict(r, success_moves=r.get("success_moves") or "") for r in self.history
+                 if r.get("kind") == "eval" and r.get("split") in self.cfg.eval.extra_splits]
+        if extra:
+            lines += ["## Other test splits", "", format_table(extra, ["iteration", "stage", "split", "label", "success",
+                                                                       "reward", "moves", "success_moves"]), ""]
+        lines += self._category_table()
         sp = [r for r in self.history if r.get("kind") == "selfplay"]
         if sp:
             lines += ["## Self-play", "",
