@@ -1,0 +1,37 @@
+# Full-scale runs of the early Phase 1a levels (L1, L2; until now only the CPU-reduced versions ran),
+# under the same settings as round 2 of the self-play ablation (selfplay_textworld.yaml, "v2") so the
+# numbers are comparable: gate on 40 validation games, 100 test games for the kept weights, policy
+# target temperature 0.25, every teacher sample kept. L2-goal's full-scale run is the ablation's control.
+#
+#   mcts-laya tw-games --level L1 L2 --train 150 --eval 100 --val 40 --out data/textworld
+#   python scripts/run_ablation.py configs/ablation/phase1a_full.yaml --jobs 2
+#   python scripts/summarize_ablation.py runs/ablation/phase1a_full --reference T-teacher-only
+name: phase1a_full
+output_root: runs/ablation/phase1a_full
+seeds: [0, 1, 2]
+
+levels:
+  L1: configs/textworld/l1.yaml
+  L2: configs/textworld/l2.yaml
+
+gpu_overrides:
+  - model.device=cuda
+  - evaluator.max_rows=64
+  - search.params.batch_size=8
+  - train.config.batch_size=16
+  - save_half=true
+  # v2 settings (l1.yaml / l2.yaml still carry the early ones)
+  - eval.problems=100
+  - eval.gate_problems=40
+  - eval.gate_split=val
+  - gate.enabled=true
+  - gate.tolerance=0.02
+  - selfplay.config.policy_target_temperature=0.25
+  - train.teacher_mix=1.0
+
+variants:
+  T-teacher-only:             # no self-play data: every iteration retrains on the teacher data alone
+    - selfplay.add_to_replay=false
+    - selfplay.episodes_per_iteration=16
+  control:                    # imitate successful self-play games (16 simulations)
+    - selfplay.policy_filter=success
