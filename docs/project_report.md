@@ -381,6 +381,37 @@ L3 control 第 1 輪後平均 0.580，最後 0.640，約 70% 的進步發生在�
 
 warm start 之後，所有變體、所有 seed 都是 100% 成功、平均 4.73 步，reward 0.804 = 0.5 + 0.5·0.9^4.73，也就是完全照著 teacher 的路線走，greedy 和搜尋的結果一模一樣。料理關卡 C1 的步驟太短（讀食譜、照做），模仿就能完全解決，沒有留給 self-play 的空間。
 
+### 4.5 各階段對照：未微調的 Laya、greedy、warm start 與 self-play
+
+每個實驗開始時都會先評估**未經任何微調的原始 Laya**（`initial`），每次評估也都同時跑 greedy（不搜尋）和 PUCT16（搜尋），所以從既有的紀錄就能整理出「從原始模型到 self-play 之後」每一步的效果。
+
+**GPU 第二輪（100 局測試）**：每一列是該關卡所有跑完的實驗的平均（L2-goal 9 個、L3-goal 12 個、C1 11 個）。原始 Laya 在每個實驗都相同，因為模型和測試遊戲都一樣。括號內是成功率。
+
+| 方法 | L2-goal PUCT16 | L2-goal greedy | L3-goal PUCT16 | L3-goal greedy | C1 PUCT16 | C1 greedy |
+|---|---|---|---|---|---|---|
+| 均勻先驗搜尋（不用 Laya） | 0.032（0.04） | — | 0.048（0.06） | — | 0.027（0.00） | — |
+| 隨機 rollout 搜尋（不用 Laya） | 0.233（0.34） | — | 0.094（0.13） | — | 0.277（0.32） | — |
+| **原始 Laya（未微調）** | **0.128（0.19）** | **0.061（0.09）** | **0.052（0.07）** | **0.031（0.04）** | **0.140（0.15）** | **0.003（0.00）** |
+| warm start 後 | 0.601 | 0.501 | 0.396 | 0.303 | 0.804（1.00） | 0.804（1.00） |
+| self-play 後（control） | 0.736 | 0.590 | 0.640 | 0.428 | 0.804 | 0.804 |
+| 只用 teacher 資料重新訓練（T-teacher-only） | 0.613 | 0.579 | 0.413 | 0.371 | 0.804 | 0.804 |
+
+**CPU 縮小版（Phase 1a 前期，評估 20–30 局、3 輪 self-play）**：
+
+| 關卡 | 均勻先驗搜尋 | 隨機 rollout | **原始 Laya PUCT16 / greedy** | warm start PUCT16 / greedy | self-play 後 PUCT16 / greedy |
+|---|---|---|---|---|---|
+| L1（30 局） | 0.245 | 0.595 | **0.375 / 0.193** | 0.837 / 0.779 | 0.866 / 0.865 |
+| L2（30 局） | 0.028 | 0.173 | **0.175 / 0.069** | 0.761 / 0.694 | 0.708 / 0.662 |
+| L2-goal（20 局，有 gate） | 0.041 | 0.286 | **0.146 / 0.072** | 0.754 / 0.661 | 3 輪都被 gate 退回，保留 warm start |
+
+（原始數據：`docs/results/phase1a/`。這些是縮小版，評估局數少，雜訊約 ±0.05–0.08。）
+
+**解讀**
+- **原始 Laya 幾乎不能直接用**：所有關卡的 greedy 成功率都在 10% 以下。L2-goal 上，原始 Laya 加搜尋（0.128）勝過均勻先驗（0.032），代表它對情境有一點判讀能力，但仍不如隨機 rollout（0.233）；L3 上則和沒有模型一樣（0.052 vs 0.048）。Laya 是通用的決策模型，沒看過 TextWorld 的指令和任務格式，需要針對任務微調。
+- **teacher 微調是最大的一步**：greedy 在 L2-goal 從 0.06 到 0.50，在 L3 從 0.03 到 0.30。
+- **self-play 主要提高「搜尋之後」的成績**：從 warm start 到 self-play 後，PUCT16 在 L3 增加 0.24，greedy 只增加 0.13；和 §4.4 發現 3 一致，self-play 主要改善的是價值網路，而價值網路只有在搜尋時才派上用場。
+- **L1、L2 的完整規模版本還沒有跑過**（只有上表的縮小版）。設定已經準備好：`configs/ablation/phase1a_full.yaml`，用和第二輪相同的評估設計跑 T-teacher-only 與 control 各 3 個 seed。
+
 ---
 
 ## 5. 結論
@@ -415,7 +446,8 @@ warm start 之後，所有變體、所有 seed 都是 100% 成功、平均 4.73 
 1. **測試「評估時多搜尋」的效果**：用已訓練好的模型，以 16 / 32 / 64 / 128 次模擬評估。如果 self-play 訓練出的價值網路讓「搜尋越多、成績越好」，就是 AlphaZero 式「搜尋可以擴展」的核心證據，也能判斷 L3 的飽和是網路的限制還是搜尋預算的限制。不需要重新訓練，只需要新增一個評估指令。
 2. **確認機制**：在 L3 上跑 B-value-only（self-play 只訓練 value）。如果它和 control 一樣好，就確定 self-play 的貢獻來自價值網路。
 3. **更難的任務**：C2（多食材、多房間的料理遊戲），或開始 Phase 1b 的 ALFWorld。
-4. **讓 self-play 持續進步**：較大的驗證集（降低 gate 的雜訊）、每輪更多局、逐步降低 teacher 資料的比重。
+4. **補齊 L1、L2 的完整規模實驗**（`configs/ablation/phase1a_full.yaml`，§4.5），讓 Phase 1a 的每個關卡都有可比較的結果。
+5. **讓 self-play 持續進步**：較大的驗證集（降低 gate 的雜訊）、每輪更多局、逐步降低 teacher 資料的比重。
 
 ---
 
@@ -437,6 +469,11 @@ scripts/setup_env.sh --download                       # 建 venv、安裝、下�
 .venv/bin/python scripts/run_ablation.py configs/ablation/selfplay_textworld.yaml --only L2-goal L3-goal \
     --variants T-teacher-only control --seeds 0 1 2 --jobs 2
 .venv/bin/python scripts/summarize_ablation.py runs/ablation/selfplay_textworld_v2 --reference T-teacher-only
+
+# L1、L2 的完整規模版本（§4.5）
+.venv/bin/mcts-laya tw-games --level L1 L2 --train 150 --eval 100 --val 40 --out data/textworld
+.venv/bin/python scripts/run_ablation.py configs/ablation/phase1a_full.yaml --jobs 2
+.venv/bin/python scripts/summarize_ablation.py runs/ablation/phase1a_full --reference T-teacher-only
 
 # 視覺化某個實驗
 .venv/bin/mcts-laya viz --run runs/ablation/selfplay_textworld_v2/L3-goal/control-s0 --problems 4
