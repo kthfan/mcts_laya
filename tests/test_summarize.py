@@ -24,7 +24,9 @@ def test_summary_derives_success_moves_for_old_textworld_runs(tmp_path):
     (run / "config.yaml").write_text(yaml.safe_dump({"env": {"name": "textworld", "params": {"level": "L3-goal"}},
                                                      "eval": {"max_moves": 50}}))
     ev = {"kind": "eval", "label": "puct16", "split": "eval"}
-    recs = [dict(ev, stage="warmstart", iteration=0, success=0.5, reward=0.3, moves=20.0),
+    recs = [dict(ev, stage="baseline", iteration=0, label="rollout-puct16", success=0.1, reward=0.06, moves=28.0),
+            dict(ev, stage="initial", iteration=0, success=0.06, reward=0.05, moves=28.68),
+            dict(ev, stage="warmstart", iteration=0, success=0.5, reward=0.3, moves=20.0),
             dict(ev, stage="selfplay", iteration=1, success=0.88, reward=0.64, moves=10.83)]
     (run / "metrics.jsonl").write_text("".join(json.dumps(r) + "\n" for r in recs))
     (run / "done.json").write_text("{}")
@@ -34,3 +36,10 @@ def test_summary_derives_success_moves_for_old_textworld_runs(tmp_path):
     # L3-goal fails only at the 30-step cap: (10.83 - 0.12 * 30) / 0.88 and (20 - 0.5 * 30) / 0.5
     assert abs(float(rec["final_success_moves"]) - 8.2159) < 1e-3
     assert abs(float(rec["warm_success_moves"]) - 10.0) < 1e-9
+    assert float(rec["warm_moves"]) == 20.0
+    summary = (tmp_path / "summary.md").read_text()
+    assert "## Warm start (puct16, before self-play)" in summary
+    assert "| L3-goal | control | 1 | 0.300 | 0.50 | 20.0 | 10.0 |" in summary
+    # before training: (28 - 0.9 * 30) / 0.1 = 10 and (28.68 - 0.94 * 30) / 0.06 = 8
+    assert "| L3-goal | rollout-puct16 (no Laya) | 1 | 0.060 | 0.10 | 28.0 | 10.0 |" in summary
+    assert "| L3-goal | untrained Laya puct16 | 1 | 0.050 | 0.06 | 28.7 | 8.0 |" in summary
