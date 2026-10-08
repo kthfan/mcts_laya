@@ -96,7 +96,12 @@ def load(run_dir: Path, label: str):
     sps = [r for r in recs if r.get("kind") == "selfplay"]
     base = {r["label"]: r for r in recs if r.get("kind") == "eval" and r.get("stage") == "baseline"}
     cap = failure_cap(run_dir)
+    # before any training: the searches without Laya, and the untrained Laya with and without search
+    before = [(f"{lab} (no Laya)", r) for lab, r in base.items()]
+    before += [(f"untrained Laya {r['label']}", r) for r in ev if r["stage"] == "initial"]
     return {
+        "_before": [{"method": m, "reward": r["reward"], "success": r["success"], "moves": r["moves"],
+                     "success_moves": success_moves(r, cap)} for m, r in before],
         "warm_reward": warm and warm["reward"], "final_reward": final and final["reward"],
         "best_reward": max([r["reward"] for r in sp] + ([warm["reward"]] if warm else [])),
         "warm_success": warm and warm["success"], "final_success": final and final["success"],
@@ -141,7 +146,7 @@ def main(argv=None) -> int:
             "greedy_warm_success", "greedy_final_success", "gate_accepted", "selfplay_success",
             "policy_episodes", "uniform_baseline"]
     with open(root / "runs.csv", "w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=cols)
+        w = csv.DictWriter(f, fieldnames=cols, extrasaction="ignore")
         w.writeheader()
         w.writerows(rows)
     used = [r for r in rows if r["done"] or args.include_incomplete]
@@ -178,6 +183,17 @@ def main(argv=None) -> int:
                      f"{ms([r['warm_success'] for r in rs], 2)} | {ms([r['warm_moves'] for r in rs], 1)} | "
                      f"{ms([r['warm_success_moves'] for r in rs], 1)} | {ms([r['greedy_warm'] for r in rs])} | "
                      f"{ms([r['greedy_warm_success'] for r in rs], 2)} | {ms([r['greedy_final_success'] for r in rs], 2)} |")
+    before = defaultdict(list)
+    for r in used:
+        for b in r["_before"]:
+            before[(r["level"], b["method"])].append(b)
+    if before:
+        lines += ["", "## Before training (all runs of a level; same games and model, so near-identical)", "",
+                  "| level | method | runs | reward | success | moves | success moves |", "|---|---|---|---|---|---|---|"]
+        for (level, method), bs in sorted(before.items()):
+            lines.append(f"| {level} | {method} | {len(bs)} | {ms([b['reward'] for b in bs])} | "
+                         f"{ms([b['success'] for b in bs], 2)} | {ms([b['moves'] for b in bs], 1)} | "
+                         f"{ms([b['success_moves'] for b in bs], 1)} |")
     skipped = [r for r in rows if r not in used]
     if skipped:
         lines += ["", "Not averaged (no `done.json`; rerun them with the same command, finished runs are skipped):",
