@@ -15,10 +15,11 @@
 | 問題 | 答案 | 證據 |
 |---|---|---|
 | 整個 AlphaZero 迴圈能不能運作？ | 能 | Phase 0：Countdown 上 Laya+搜尋 0.93，不用 Laya 的搜尋 0.30；代數從零開始可以學會 |
-| self-play 在文字冒險遊戲（TextWorld）上有沒有幫助？ | **有，而且任務越難幫助越大** | 和「只用 teacher 資料反覆訓練」相比，同一個 seed 的成績：L2 +0.12、L3 +0.22，15 組比較全部為正 |
+| self-play 在文字冒險遊戲（TextWorld）上有沒有幫助？ | **在需要探索的關卡上有，而且任務越難幫助越大** | 和「只用 teacher 資料反覆訓練」相比，同一個 seed 的成績：L2-goal +0.12、L3-goal +0.22，15 組比較全部為正 |
+| 什麼情況下 self-play 沒有幫助？ | 模仿 teacher 就已經達到最優的關卡 | 每一步都有指示的 L1、L2，以及料理關卡 C1：warm start 後已接近理論最佳，self-play 與只用 teacher 資料的差距 ≤ 0.01 |
 | self-play 為什麼有幫助？ | 主要是讓**價值網路**變得有用，搜尋因此變強 | 只用 teacher 資料時，搜尋只比不搜尋多 +0.04；加入 self-play 後多 +0.21 |
 | 進階的 self-play 變體（只學有效率的局、更多模擬次數）有沒有更好？ | 沒有 | 和最簡單的版本差距 < 0.02，在雜訊範圍內 |
-| 目前的瓶頸 | self-play 第 1–2 輪就趨於飽和；L2 與 C1 已經太簡單 | L3 約 70% 的進步發生在第 1 輪 |
+| 目前的瓶頸 | self-play 第 1–2 輪就趨於飽和；L1、L2、L2-goal、C1 都已經沒有比較空間 | L3-goal 約 70% 的進步發生在第 1 輪 |
 
 **過程中最重要的工程結論**：需要 gate（只保留不退步的權重）、獨立的驗證集、平行對局（actor）才能讓 GPU 不閒置，以及對 TextWorld 本身的一個無限迴圈 bug 加上防護。
 
@@ -410,16 +411,53 @@ warm start 之後，所有變體、所有 seed 都是 100% 成功、平均 4.73 
 - **原始 Laya 幾乎不能直接用**：所有關卡的 greedy 成功率都在 10% 以下。L2-goal 上，原始 Laya 加搜尋（0.128）勝過均勻先驗（0.032），代表它對情境有一點判讀能力，但仍不如隨機 rollout（0.233）；L3 上則和沒有模型一樣（0.052 vs 0.048）。Laya 是通用的決策模型，沒看過 TextWorld 的指令和任務格式，需要針對任務微調。
 - **teacher 微調是最大的一步**：greedy 在 L2-goal 從 0.06 到 0.50，在 L3 從 0.03 到 0.30。
 - **self-play 主要提高「搜尋之後」的成績**：從 warm start 到 self-play 後，PUCT16 在 L3 增加 0.24，greedy 只增加 0.13；和 §4.4 發現 3 一致，self-play 主要改善的是價值網路，而價值網路只有在搜尋時才派上用場。
-- **L1、L2 的完整規模版本還沒有跑過**（只有上表的縮小版）。設定已經準備好：`configs/ablation/phase1a_full.yaml`，用和第二輪相同的評估設計跑 T-teacher-only 與 control 各 3 個 seed。
+- L1、L2 的完整規模結果見 §4.6。
+
+### 4.6 L1、L2 完整規模：模仿已經達到最優時，self-play 沒有空間
+
+用和第二輪相同的評估設計（`configs/ablation/phase1a_full.yaml`：100 局測試、40 局驗證、gate），在每一步都有指示的 L1、L2 上跑 T-teacher-only 與 control，各 3 個 seed。
+
+**理論最佳**：L1 的任務是 3 步，全部用 3 步解出時 reward = 0.5 + 0.5·0.9³ ≈ **0.864**；L2 是 5 步，約 **0.795**。
+
+| 方法 | L1 PUCT16 | L1 greedy | L2 PUCT16 | L2 greedy |
+|---|---|---|---|---|
+| 均勻先驗搜尋（不用 Laya） | 0.276（0.34） | — | 0.032（0.04） | — |
+| 隨機 rollout 搜尋（不用 Laya） | 0.564（0.70） | — | 0.156（0.21） | — |
+| **原始 Laya（未微調）** | **0.446（0.59）** | **0.254（0.31）** | **0.117（0.18）** | **0.042（0.06）** |
+| warm start 後（6 個實驗平均） | 0.859 | 0.837 | 0.772 | 0.733 |
+| self-play 後（control） | 0.848 ± 0.014 | 0.829 | 0.780 ± 0.004 | 0.766 |
+| 只用 teacher 資料重新訓練（T-teacher-only） | 0.857 ± 0.006 | 0.837 | 0.776 ± 0.002 | 0.753 |
+| **control − T-teacher-only（成對）** | **−0.009 ± 0.008** | | **+0.004 ± 0.006** | |
+
+（括號內是成功率。）
+
+**解讀**
+- **warm start 就已經接近最優**：L1 在 warm start 後平均 0.859，理論最佳 0.864，成功率 98–100%、平均約 3.1 步；L2 是 0.772，最佳約 0.795，成功率 97–99%。self-play 能改進的空間只剩 0.005（L1）和 0.02（L2），小於評估的雜訊。
+- **self-play 和只用 teacher 資料沒有差別**（L1 −0.009、L2 +0.004，都在雜訊範圍內）。這兩個關卡每一步都有指示，照著指示做就是最佳解，模仿 teacher 已經足夠，不需要探索。
+- **L1 的 control 有兩個 seed 最後略低**（0.840、0.839，warm start 0.863、0.862），但 gate 每一輪都接受。原因是驗證集上的成績一直停在最高值附近（0.860–0.864），落在容許範圍（0.02）內，而測試集上 0.02 左右的下降屬於雜訊等級，gate 不會、也不應該對這種差距做反應。
+- **搜尋本身的幫助也很小**：PUCT16 只比 greedy 高 0.01–0.02，因為 policy 已經幾乎每一步都選對。
+- **原始 Laya 在 L1 有一點基礎能力**：搜尋 0.446 勝過均勻先驗 0.276，但不如隨機 rollout 0.564；L1 只有 3 個房間，隨機玩到底就常常能成功。
+
+**跨關卡的整體圖像**（self-play 相對 T-teacher-only 的成對差距）：
+
+| 關卡 | 目標寫法 | warm start 後離最佳還有多遠 | self-play 的幫助 |
+|---|---|---|---|
+| L1 | 每一步都寫 | 約 0.005 | −0.009（無） |
+| L2 | 每一步都寫 | 約 0.02 | +0.004（無） |
+| C1 | 料理：讀食譜照做 | 0（已最優） | 0.000（無） |
+| L2-goal | 只寫最終目標 | 約 0.14（warm start 0.60，最好的變體達 0.74） | **+0.12** |
+| L3-goal | 只寫最終目標 | 約 0.30（warm start 0.40，理想約 0.70） | **+0.22** |
+
+self-play 的幫助大小和「模仿 teacher 之後還剩多少空間」一致：只有需要自己探索的關卡，模仿留下了空間，self-play 才有東西可以學。
 
 ---
 
 ## 5. 結論
 
-1. **Laya + MCTS 的 AlphaZero 式迴圈在文字任務上有效。** 在需要探索的 TextWorld 關卡上，self-play 帶來明確且可重現的進步，任務越難進步越大。
+1. **Laya + MCTS 的 AlphaZero 式迴圈在文字任務上有效。** 在需要探索的 TextWorld 關卡上，self-play 帶來明確且可重現的進步，任務越難進步越大；在模仿 teacher 就能達到最優的關卡（L1、L2、C1）上則沒有差別，因為已經沒有改進空間（§4.6）。
 2. **進步的來源主要是價值網路。** teacher 只能教「最佳路線長什麼樣子」，教不出「這個局面有多糟」；self-play 補上了這一塊，讓搜尋真正發揮作用。這呼應 AlphaZero 的設計：搜尋的品質取決於價值估計。
 3. **簡單的設定就夠了。** 目前沒有任何進階變體勝過「成功局的搜尋分佈 + 銳化 + gate」。
-4. **目前的限制**：self-play 在 1–2 輪後就飽和；L2 和 C1 已經沒有比較空間；gate 的驗證集只有 40 局，雜訊偏大。
+4. **目前的限制**：self-play 在 1–2 輪後就飽和；L1、L2、L2-goal、C1 都已經沒有比較空間，目前只有 L3-goal 還能分辨不同做法；gate 的驗證集只有 40 局，雜訊偏大。
 
 ---
 
@@ -446,8 +484,7 @@ warm start 之後，所有變體、所有 seed 都是 100% 成功、平均 4.73 
 1. **測試「評估時多搜尋」的效果**：用已訓練好的模型，以 16 / 32 / 64 / 128 次模擬評估。如果 self-play 訓練出的價值網路讓「搜尋越多、成績越好」，就是 AlphaZero 式「搜尋可以擴展」的核心證據，也能判斷 L3 的飽和是網路的限制還是搜尋預算的限制。不需要重新訓練，只需要新增一個評估指令。
 2. **確認機制**：在 L3 上跑 B-value-only（self-play 只訓練 value）。如果它和 control 一樣好，就確定 self-play 的貢獻來自價值網路。
 3. **更難的任務**：C2（多食材、多房間的料理遊戲），或開始 Phase 1b 的 ALFWorld。
-4. **補齊 L1、L2 的完整規模實驗**（`configs/ablation/phase1a_full.yaml`，§4.5），讓 Phase 1a 的每個關卡都有可比較的結果。
-5. **讓 self-play 持續進步**：較大的驗證集（降低 gate 的雜訊）、每輪更多局、逐步降低 teacher 資料的比重。
+4. **讓 self-play 持續進步**：較大的驗證集（降低 gate 的雜訊）、每輪更多局、逐步降低 teacher 資料的比重。
 
 ---
 
@@ -470,7 +507,7 @@ scripts/setup_env.sh --download                       # 建 venv、安裝、下�
     --variants T-teacher-only control --seeds 0 1 2 --jobs 2
 .venv/bin/python scripts/summarize_ablation.py runs/ablation/selfplay_textworld_v2 --reference T-teacher-only
 
-# L1、L2 的完整規模版本（§4.5）
+# L1、L2 的完整規模版本（§4.6）
 .venv/bin/mcts-laya tw-games --level L1 L2 --train 150 --eval 100 --val 40 --out data/textworld
 .venv/bin/python scripts/run_ablation.py configs/ablation/phase1a_full.yaml --jobs 2
 .venv/bin/python scripts/summarize_ablation.py runs/ablation/phase1a_full --reference T-teacher-only
