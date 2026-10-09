@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+</head>
+<body>
+<title>AI 自學文字冒險</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=LXGW+WenKai+TC:wght@400;700&family=Noto+Sans+TC:wght@400;500;700&display=swap">
+<style>
+/* Layout: one reading column (~38em) with full-width "side notes" for analogies; charts sit in the column. */
+:root {
+  --bg: #fbfcfb;
+  --surface: #f1f5f3;
+  --fg: #1d2523;
+  --muted: #5b6763;
+  --line: #d9e1de;
+  --accent: #008a7c;
+  --accent-ink: #00695e;
+  --warm: #b45309;
+  --ctx1: #c7cfcc;
+  --ctx2: #9aa6a2;
+  --note-bg: #fdf6ec;
+  --note-line: #e8cfa6;
+  --font-display: "LXGW WenKai TC", "Noto Serif TC", "PingFang TC", serif;
+  --font-body: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", system-ui, sans-serif;
+  --measure: 38em;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #141917; --surface: #1c2321; --fg: #e4ebe8; --muted: #9eaba7; --line: #2c3633;
+    --accent: #1a9a8b; --accent-ink: #5cc7b8; --warm: #ba7a22; --ctx1: #3a4542; --ctx2: #5f6c68;
+    --note-bg: #231e16; --note-line: #4d3f28; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #141917; --surface: #1c2321; --fg: #e4ebe8; --muted: #9eaba7; --line: #2c3633;
+  --accent: #1a9a8b; --accent-ink: #5cc7b8; --warm: #ba7a22; --ctx1: #3a4542; --ctx2: #5f6c68;
+  --note-bg: #231e16; --note-line: #4d3f28; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 17px; line-height: 1.85; }
+.wrap { max-width: 46rem; margin: 0 auto; padding-inline: 20px; padding-block: 56px 96px; }
+h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; line-height: 1.35; font-weight: 700; }
+h1 { font-size: clamp(2rem, 6vw, 2.9rem); margin: 0 0 .4em; }
+h2 { font-size: 1.65rem; margin: 2.6em 0 .6em; }
+h3 { font-size: 1.22rem; margin: 1.8em 0 .4em; }
+p { margin: 0 0 1em; }
+.lede { font-size: 1.15rem; color: var(--muted); max-width: var(--measure); }
+.kicker { font-size: .82rem; letter-spacing: .12em; color: var(--accent-ink); font-weight: 700; margin-bottom: .6em; }
+strong { color: var(--fg); }
+.hl { background: linear-gradient(transparent 62%, color-mix(in srgb, var(--accent) 22%, transparent) 62%); }
+.answer { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); margin: 1.6em 0; }
+.answer > div { background: var(--surface); border-radius: 12px; padding: 16px 18px; min-width: 0; }
+.answer .q { font-size: .85rem; color: var(--muted); }
+.answer .a { font-family: var(--font-display); font-size: 1.15rem; font-weight: 700; margin-top: .2em; line-height: 1.5; }
+.note { background: var(--note-bg); border: 1px solid var(--note-line); border-radius: 12px; padding: 14px 18px; margin: 1.4em 0; }
+.note .tag { font-size: .8rem; font-weight: 700; color: var(--warm); letter-spacing: .08em; }
+.note p:last-child { margin-bottom: 0; }
+.screen { font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; font-size: .86rem; line-height: 1.7; background: var(--surface); border-radius: 10px; padding: 14px 16px; overflow-x: auto; white-space: pre-wrap; }
+.qa { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); margin: 1.2em 0; }
+.qa > div { border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; min-width: 0; }
+.qa .who { font-size: .8rem; font-weight: 700; color: var(--accent-ink); letter-spacing: .06em; }
+.qa .ask { font-weight: 700; margin: .3em 0; }
+.qa .out { color: var(--muted); font-size: .95rem; }
+ol.steps { list-style: none; padding: 0; margin: 1.4em 0; display: grid; gap: 10px; counter-reset: s; }
+ol.steps li { counter-increment: s; display: grid; grid-template-columns: 2.2rem 1fr; gap: 12px; align-items: start; }
+ol.steps li::before { content: counter(s); width: 2.2rem; height: 2.2rem; border-radius: 50%; background: var(--accent); color: var(--bg); display: grid; place-items: center; font-weight: 700; font-family: var(--font-display); }
+ol.steps li.loop::before { background: var(--warm); }
+ol.steps b { display: block; }
+ol.steps span { color: var(--muted); font-size: .96rem; }
+.loopnote { font-size: .9rem; color: var(--warm); margin: -.4em 0 1.2em 3.4rem; }
+.tbl { overflow-x: auto; margin: 1.2em 0; }
+table { border-collapse: collapse; width: 100%; font-size: .95rem; font-variant-numeric: tabular-nums; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { color: var(--muted); font-weight: 500; font-size: .85rem; border-bottom-color: var(--fg); }
+td.num, th.num { text-align: right; }
+tr.focus td { color: var(--accent-ink); font-weight: 700; }
+.chart { margin: 1.4em 0 1.8em; }
+.chart .ttl { font-weight: 700; font-size: 1rem; }
+.chart .sub { font-size: .85rem; color: var(--muted); }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: .85rem; color: var(--muted); margin: .5em 0 .2em; }
+.legend i { display: inline-block; width: 11px; height: 11px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+.chart svg { width: 100%; height: auto; display: block; }
+.chart text { font-family: var(--font-body); font-size: 13px; fill: var(--muted); }
+.chart text.val { fill: var(--fg); font-weight: 700; text-anchor: middle; }
+.chart text.cat { text-anchor: middle; font-size: 14px; fill: var(--fg); }
+.chart .axis { stroke: var(--line); stroke-width: 1; }
+.chart rect:hover { opacity: .85; }
+.tiles { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(10.5rem, 1fr)); margin: 1.2em 0; }
+.tiles > div { border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
+.tiles .big { font-family: var(--font-display); font-size: 1.9rem; font-weight: 700; line-height: 1.2; font-variant-numeric: tabular-nums; }
+.tiles .big small { font-size: 1rem; }
+.tiles .lbl { font-size: .85rem; color: var(--muted); }
+.tiles .focus .big { color: var(--accent-ink); }
+dl.gloss { display: grid; grid-template-columns: minmax(6rem, max-content) 1fr; gap: 8px 18px; margin: 1em 0; }
+dl.gloss dt { font-weight: 700; }
+dl.gloss dd { margin: 0; color: var(--muted); }
+@media (max-width: 520px) { dl.gloss { grid-template-columns: 1fr; gap: 2px; } dl.gloss dd { margin-bottom: 10px; } .loopnote { margin-left: 0; } }
+footer { margin-top: 4em; font-size: .85rem; color: var(--muted); border-top: 1px solid var(--line); padding-top: 1em; }
+a { color: var(--accent-ink); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+</style>
+
+<div class="wrap">
+
+<div class="kicker">研究成果・白話版</div>
+<h1>讓 AI 自己練習，學會玩文字冒險遊戲</h1>
+<p class="lede">我們借用 AlphaGo 背後的訓練方法，讓一個小型 AI 模型在「文字冒險遊戲」裡自己跟自己練習。這份說明不需要任何 AI 背景，用日常的比喻講清楚我們做了什麼、發現了什麼。</p>
+
+<div class="answer">
+  <div><div class="q">自己練習有沒有用？</div><div class="a">有。越難的關卡，進步越多。</div></div>
+  <div><div class="q">最難的關卡進步多少？</div><div class="a">成功率 59% → <span class="hl">89%</span></div></div>
+  <div><div class="q">為什麼有用？</div><div class="a">它學會判斷「現在的局面好不好」。</div></div>
+</div>
+
+<h2>先從 AlphaGo 說起</h2>
+<p>2016 年擊敗圍棋世界冠軍的 AlphaGo，以及之後的 AlphaZero，靠的是兩種能力互相搭配：</p>
+<div class="qa">
+  <div><div class="who">直覺</div><div class="ask">「這幾步裡，哪一步看起來比較好？」</div><div class="out">看一眼盤面就有感覺，像高手的棋感。</div></div>
+  <div><div class="who">判斷</div><div class="ask">「照現在這個局面，我最後會贏嗎？」</div><div class="out">評估局勢的好壞。</div></div>
+</div>
+<p>有了這兩種能力，AI 還會在「腦中推演」：先試著往下走幾步，看看每條路的結果，再決定真正要走哪一步。推演出來的決定，通常比單靠直覺更好。</p>
+<p>AlphaZero 最特別的地方是<strong>自己跟自己下棋</strong>。每下一盤，它就把「推演後的決定」當成直覺要學習的答案，把「最後的輸贏」當成判斷要學習的答案。直覺和判斷變好，推演也跟著變好，下一盤再學到更多。</p>
+<div class="note"><div class="tag">比喻</div><p>就像學生做練習題：先憑直覺寫，再仔細驗算，最後拿驗算後的答案來修正自己的直覺。練得越多，直覺越準，驗算也越快找到正確答案。</p></div>
+
+<h2>我們的主角：Laya</h2>
+<p>圍棋的盤面是一張格子圖，但我們想讓 AI 處理的是<strong>文字</strong>。所以我們把 AlphaZero 裡的「大腦」換成 <strong>Laya</strong>，一個專門做選擇題的小型語言模型。它不寫文章，只讀一段描述和幾個選項，然後告訴你每個選項有多可能是對的。它小到可以在一般電腦上執行。</p>
+<p>我們每走一步，都問 Laya 兩個問題，剛好對應上面的兩種能力：</p>
+<div class="qa">
+  <div><div class="who">直覺：選擇題</div><div class="ask">「下面哪個指令最能讓你接近目標？」</div><div class="out">A. 往東走　B. 打開工具箱　C. 吃掉甘草糖……</div></div>
+  <div><div class="who">判斷：是非題</div><div class="ask">「照現在的情況，能在步數用完前完成任務嗎？」</div><div class="out">是 / 否，以及它有多大把握。</div></div>
+</div>
+
+<h2>遊戲長什麼樣子</h2>
+<p>我們用的是微軟做的 <strong>TextWorld</strong>，一種純文字的冒險遊戲。畫面全是文字，玩家輸入指令（「往東走」「打開箱子」「拿起鑰匙」）來完成任務。下面是 AI 實際看到的畫面（原文是英文）：</p>
+<div class="screen">目標：確認亨德森風格的箱子已經解鎖。
+最近的動作：關上工具箱。
+你身上帶著：一條甘草糖、一窩蠐螬。
+位置：工作室。……這裡有一個亨德森風格的箱子。西邊有一扇關著的門，東邊有一個出口。
+上一步的結果：你關上了工具箱。
+剩餘步數：19。</div>
+<p>遊戲有難易之分。我們主要比較兩種關卡：</p>
+<div class="tbl"><table>
+<thead><tr><th>關卡</th><th>規模</th><th>任務怎麼給</th><th>需要幾步</th></tr></thead>
+<tbody>
+<tr><td>L1、L2</td><td>3–5 個房間</td><td>每一步都寫清楚，照做就好</td><td>3 步、5 步</td></tr>
+<tr><td>L2-goal</td><td>5 個房間</td><td>只說最終目標，要自己找路</td><td>5 步</td></tr>
+<tr><td>L3-goal（最難）</td><td>8 個房間、15 個物件</td><td>只說最終目標，要自己找路</td><td>8 步</td></tr>
+<tr><td>C1（料理）</td><td>1 個房間</td><td>先讀食譜，再照著做</td><td>約 5 步</td></tr>
+</tbody></table></div>
+<p>「只說最終目標」的關卡，就像有人只告訴你「把那個箱子打開」，卻沒說鑰匙在哪。你得自己在房間之間走來走去、找東西、記住去過哪裡。這是最需要探索的情況，也是自己練習最可能派上用場的地方。</p>
+
+<h2>訓練的流程</h2>
+<ol class="steps">
+  <li><div><b>先看老師示範</b><span>「老師」是一個知道正確答案的程式。它示範 150 場遊戲怎麼玩，Laya 先從示範中學。</span></div></li>
+  <li class="loop"><div><b>自己練習</b><span>Laya 一邊推演一邊玩，每次練 64 場。</span></div></li>
+  <li class="loop"><div><b>從練習中學</b><span>把推演後的決定、以及每場的結果，拿來修正直覺和判斷。</span></div></li>
+  <li class="loop"><div><b>守門員把關</b><span>每次學完都先考一次試（40 場沒看過的遊戲）。如果成績退步太多，就退回上一個版本。</span></div></li>
+</ol>
+<p class="loopnote">第 2 到第 4 步重複 8 次。</p>
+<div class="note"><div class="tag">為什麼需要守門員</div><p>早期沒有守門員時，自己練習反而讓 AI 變差：成功率從 95% 掉到 65%。原因是它會模仿自己「繞遠路才成功」的走法。加上守門員後，只有真的變好的版本才會被留下來。</p></div>
+<p>最後的成績，一律用另外 <strong>100 場完全沒看過的遊戲</strong>來測。每個實驗都用不同的亂數重做 3 次，確認結果不是運氣。</p>
+
+<h2>分數怎麼算</h2>
+<p>一場遊戲成功的話，分數是 <strong>0.5 加上一個隨步數變小的獎勵</strong>；失敗就是 0 分。步數越少，分數越高：</p>
+<div class="tbl"><table>
+<thead><tr><th>完成時用了幾步</th><th class="num">3 步</th><th class="num">5 步</th><th class="num">8 步</th><th class="num">11 步</th><th class="num">失敗</th></tr></thead>
+<tbody><tr><td>分數</td><td class="num">0.86</td><td class="num">0.80</td><td class="num">0.72</td><td class="num">0.66</td><td class="num">0</td></tr></tbody>
+</table></div>
+<p>為什麼成功至少有 0.5 分？我們一開始只用「步數越多分數越低」的算法，結果很晚才完成的遊戲分數幾乎跟失敗一樣接近 0。AI 因此學到一個壞習慣：反正晚一點完成也差不多，乾脆拖延。加上 0.5 的保底後，「完成任務」永遠明顯好過「沒完成」。</p>
+
+<h2>結果</h2>
+
+<h3>1. 一開始的 Laya 幾乎不會玩</h3>
+<p>沒經過任何訓練的 Laya 從沒看過這種遊戲，靠直覺玩的成功率在所有關卡都不到 10%。看過老師示範後，它才真正學會基本玩法，這是整個過程中最大的一步。</p>
+
+<h3>2. 自己練習，比只複習老師示範好得多</h3>
+<p>這裡有個容易忽略的問題：練習的過程中，老師的示範也一直被拿來重新學。成績變好，會不會只是因為示範「多看了幾遍」？</p>
+<p>所以我們做了一組對照：流程完全一樣，<strong>只是把自己練習的資料丟掉</strong>，每輪只複習老師的示範。兩組一比就知道練習本身有沒有用。</p>
+<div class="chart" id="c-success"></div>
+<p>在最難的 L3-goal，自己練習的成功率到 89%，只複習示範的只有 59%。3 次重做的結果全部一致。而在每一步都寫清楚的簡單關卡，兩者幾乎沒有差別（後面會解釋原因）。</p>
+
+<h3>3. 為什麼自己練習有用：學會判斷局面</h3>
+<p>關鍵在 Laya 的「判斷」能力。老師每一場都成功，所以只看示範的話，Laya 學到的永遠是「照這樣走，一定會成功」。它分辨不出哪些局面其實很危險，例如走錯了房間、或拿錯了東西。</p>
+<p>自己練習就不一樣了：Laya 會失敗、會繞路，這些真實的結果讓它學會分辨好局面和壞局面。判斷變準了，「腦中推演」才能真正發揮作用。</p>
+<p>下圖是推演的效果：同一個模型，「推演後再走」比「只憑直覺走」多解出幾成的遊戲。</p>
+<div class="chart" id="c-search"></div>
+<p>只複習示範的那一組，推演的幫助越來越小；自己練習的那一組，推演的幫助越來越大。這正是 AlphaZero 設計的核心：推演的品質，取決於判斷局面的能力。</p>
+<div class="note"><div class="tag">比喻</div><p>只看標準答案的學生，知道正確的解法長什麼樣子，卻不知道「這一步走錯會有多糟」。自己做題、自己犯錯的學生，才會知道哪些地方是陷阱。</p></div>
+
+<h3>4. 練習讓它解出原本解不出的關，而不是走得更快</h3>
+<p>在最難的關卡，任務最少需要 8 步。看完示範時，Laya 解出的那些遊戲平均已經只用 8.6 步，非常接近最佳。練習之後還是 8.6 步。</p>
+<p>所以練習帶來的進步，<strong>幾乎全部來自「多解出了原本解不出的遊戲」</strong>，成功率從 54% 升到 89%。目前還剩約 11% 的遊戲沒解出來，這是接下來主要的改進空間。</p>
+
+<h3>5. 簡單的關卡，練習沒有空間</h3>
+<div class="tbl"><table>
+<thead><tr><th>關卡</th><th>任務怎麼給</th><th class="num">看完示範後成功率</th><th class="num">自己練習</th><th class="num">只複習示範</th></tr></thead>
+<tbody>
+<tr><td>L1</td><td>逐步指示</td><td class="num">99%</td><td class="num">98%</td><td class="num">99%</td></tr>
+<tr><td>L2</td><td>逐步指示</td><td class="num">98%</td><td class="num">99%</td><td class="num">98%</td></tr>
+<tr><td>C1 料理</td><td>讀食譜照做</td><td class="num">100%</td><td class="num">100%</td><td class="num">100%</td></tr>
+<tr class="focus"><td>L2-goal</td><td>只給目標</td><td class="num">77%</td><td class="num">94%</td><td class="num">79%</td></tr>
+<tr class="focus"><td>L3-goal</td><td>只給目標</td><td class="num">54%</td><td class="num">89%</td><td class="num">59%</td></tr>
+</tbody></table></div>
+<p>每一步都寫清楚的關卡，照著指示做就是最佳解。看完示範後就已經接近滿分，練習也沒有東西可學。只有需要自己探索的關卡，模仿老師之後還留有空間，練習才派上用場。</p>
+
+<h3>6. 推演要花多少時間</h3>
+<p>推演讓成績變好，但每一步要多花時間。我們在 L2-goal 上量了 30 場遊戲：</p>
+<div class="tiles">
+  <div><div class="big">0.013<small> 秒</small></div><div class="lbl">只憑直覺，每一步<br>成功率 70%</div></div>
+  <div class="focus"><div class="big">0.21<small> 秒</small></div><div class="lbl">推演 16 次，每一步<br>成功率 97%</div></div>
+  <div><div class="big">0.25<small> 秒</small></div><div class="lbl">推演 64 次，每一步<br>成功率 100%</div></div>
+</div>
+<p>推演讓每一步慢了 15 到 19 倍，但每步也只要約 0.2 秒。有趣的是，推演次數多 4 倍，時間只多兩成。原因是 Laya 會記住前面已經想過的局面，不用重想；而且推演很快就看到終點，不必每次都問模型。真正花時間的是遊戲本身（約佔四分之三），不是 Laya。</p>
+
+<h2>結論</h2>
+<p><strong>AlphaZero 的「自己練習」方法，換成文字遊戲也能用。</strong>在需要自己探索的關卡，練習帶來明確、可重複的進步，越難的關卡進步越多。進步的來源主要是 AI「判斷局面好壞」的能力，這是只看老師示範學不到的。</p>
+<p>目前還有幾個限制：</p>
+<ul>
+  <li>練習的效果很快就到頂：最難關卡約七成的進步發生在第一輪。</li>
+  <li>除了最難的 L3-goal，其他關卡都已經接近滿分，難以再比較不同做法。</li>
+  <li>守門員用的考試只有 40 場，有時會受運氣影響。</li>
+</ul>
+<p>接下來，我們要測試「考試時多推演幾次」能不能讓成績繼續上升，並挑戰更難的遊戲，例如需要在多個房間收集多種食材的料理關卡，以及模擬家務的 ALFWorld。</p>
+
+<h2>名詞小辭典</h2>
+<dl class="gloss">
+  <dt>直覺（policy）</dt><dd>模型對每個可能動作給的「看起來多好」的分數。</dd>
+  <dt>判斷（value）</dt><dd>模型對目前局面「最後會不會成功」的估計。</dd>
+  <dt>推演（搜尋、MCTS）</dt><dd>在腦中往下試走幾步，比較各條路的結果再決定。「推演 16 次」表示試走 16 條路線。</dd>
+  <dt>只憑直覺（greedy）</dt><dd>不推演，直接選直覺分數最高的動作。</dd>
+  <dt>老師（teacher）</dt><dd>知道正確答案的程式，用來產生示範。</dd>
+  <dt>看示範（warm start）</dt><dd>在自己練習之前，先從老師的示範學基本玩法。</dd>
+  <dt>自己練習（self-play）</dt><dd>用目前的模型加上推演自己玩遊戲，再從結果學習。</dd>
+  <dt>守門員（gate）</dt><dd>每次學完都考試，退步太多就退回上一版。</dd>
+</dl>
+
+<footer>資料來源：專案報告 <code>docs/project_report.md</code>（2026-10-08）。成績皆為 100 場未看過的測試遊戲、3 次重做的平均；推演時間為單一模型在 GPU 上逐場執行的實測。</footer>
+</div>
+
+<script>
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+function barChart(id, cfg) {
+  const el = document.getElementById(id);
+  const W = 640, H = cfg.h || 280, padL = 8, padR = 8, padT = 26, padB = 34;
+  const min = Math.min(0, cfg.min ?? 0), max = cfg.max;
+  const y = v => padT + (max - v) / (max - min) * (H - padT - padB);
+  const gW = (W - padL - padR) / cfg.groups.length, n = cfg.series.length, gap = 3;
+  const bw = Math.min(52, (gW * 0.78 - (n - 1) * gap) / n);
+  let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${cfg.title}">`;
+  cfg.groups.forEach((g, gi) => {
+    const total = n * bw + (n - 1) * gap, x0 = padL + gi * gW + (gW - total) / 2;
+    cfg.series.forEach((se, si) => {
+      const v = se.values[gi];
+      if (v == null) return;
+      const x = x0 + si * (bw + gap), y1 = y(Math.max(v, 0)), y2 = y(Math.min(v, 0));
+      s += `<rect x="${x}" y="${y1}" width="${bw}" height="${Math.max(y2 - y1, 1)}" rx="3" fill="var(${se.color})"><title>${g}・${se.name}：${cfg.fmt(v)}</title></rect>`;
+      s += `<text class="val" x="${x + bw / 2}" y="${v >= 0 ? y1 - 7 : y2 + 15}">${cfg.fmt(v)}</text>`;
+    });
+    s += `<text class="cat" x="${padL + gi * gW + gW / 2}" y="${H - 10}">${g}</text>`;
+  });
+  s += `<line class="axis" x1="${padL}" x2="${W - padR}" y1="${y(0)}" y2="${y(0)}"/></svg>`;
+  const legend = cfg.series.length > 1 ? cfg.series.map(se => `<span><i style="background:var(${se.color})"></i>${se.name}</span>`).join("") : "";
+  el.innerHTML = `<div class="ttl">${cfg.title}</div>${cfg.sub ? `<div class="sub">${cfg.sub}</div>` : ""}<div class="legend">${legend}</div>${s}`;
+}
+const pct = v => Math.round(v * 100) + "%";
+barChart("c-success", {
+  title: "成功率：四個階段比較", sub: "推演 16 次後的成功率，100 場測試遊戲",
+  groups: ["L2-goal", "L3-goal（最難）"], max: 1, fmt: pct,
+  series: [
+    { name: "未訓練", color: "--ctx1", values: [0.19, 0.07] },
+    { name: "看完示範", color: "--ctx2", values: [0.77, 0.54] },
+    { name: "只複習示範", color: "--warm", values: [0.79, 0.59] },
+    { name: "自己練習", color: "--accent", values: [0.94, 0.89] },
+  ],
+});
+barChart("c-search", {
+  title: "推演多解出的遊戲比例（L3-goal）", sub: "推演後的成功率減去只憑直覺的成功率",
+  groups: ["看完示範時", "訓練結束時"], max: 0.32, fmt: v => "+" + pct(v), h: 250,
+  series: [
+    { name: "只複習示範", color: "--warm", values: [0.14, 0.06] },
+    { name: "自己練習", color: "--accent", values: [0.14, 0.28] },
+  ],
+});
+</script>
+
+</body>
+</html>

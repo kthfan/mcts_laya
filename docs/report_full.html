@@ -1,0 +1,638 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+</head>
+<body>
+<title>Laya + MCTS 技術報告</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@600;700&family=Noto+Sans+TC:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: sticky section index on the left (wide screens), single report column on the right; tables scroll in their own boxes. */
+:root {
+  --bg: #ffffff;
+  --surface: #f4f6f7;
+  --fg: #1b2228;
+  --muted: #5d6870;
+  --line: #dde2e5;
+  --strong-line: #1b2228;
+  --accent: #008a7c;
+  --accent-ink: #00695e;
+  --warm: #b45309;
+  --ctx1: #cdd3d7;
+  --ctx2: #98a2a9;
+  --font-head: "Noto Serif TC", "Songti TC", serif;
+  --font-body: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #121619; --surface: #1a2024; --fg: #e3e8eb; --muted: #9aa5ad; --line: #2b343a; --strong-line: #c9d1d6;
+    --accent: #1a9a8b; --accent-ink: #5cc7b8; --warm: #ba7a22; --ctx1: #3a444b; --ctx2: #5e6a72; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #121619; --surface: #1a2024; --fg: #e3e8eb; --muted: #9aa5ad; --line: #2b343a; --strong-line: #c9d1d6;
+  --accent: #1a9a8b; --accent-ink: #5cc7b8; --warm: #ba7a22; --ctx1: #3a444b; --ctx2: #5e6a72; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 15.5px; line-height: 1.8; }
+.page { max-width: 76rem; margin: 0 auto; padding-inline: 20px; padding-block: 48px 96px; display: grid; grid-template-columns: 13rem minmax(0, 1fr); gap: 48px; }
+nav.toc { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 24px); align-self: start; font-size: .85rem; line-height: 1.6; max-height: calc(100vh - 48px); overflow-y: auto; }
+nav.toc .h { font-weight: 700; color: var(--muted); letter-spacing: .08em; font-size: .75rem; margin-bottom: .6em; }
+nav.toc ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+nav.toc ol ol { padding-left: 1em; margin: 2px 0 6px; }
+nav.toc a { color: var(--muted); text-decoration: none; display: block; padding: 2px 0; }
+nav.toc a:hover { color: var(--accent-ink); }
+main { min-width: 0; max-width: 52rem; }
+@media (max-width: 900px) { .page { grid-template-columns: 1fr; gap: 24px; } nav.toc { position: static; max-height: none; border: 1px solid var(--line); border-radius: 8px; padding: 12px 16px; } }
+h1, h2, h3, h4 { font-family: var(--font-head); text-wrap: balance; line-height: 1.4; }
+h1 { font-size: clamp(1.8rem, 4vw, 2.4rem); margin: 0 0 .3em; }
+h2 { font-size: 1.45rem; margin: 2.8em 0 .7em; padding-top: .6em; border-top: 1px solid var(--line); }
+h3 { font-size: 1.15rem; margin: 2em 0 .5em; }
+h4 { font-size: 1rem; margin: 1.6em 0 .4em; font-family: var(--font-body); }
+h2 .n, h3 .n { color: var(--accent-ink); font-family: var(--font-mono); font-weight: 500; margin-right: .5em; font-size: .9em; }
+p { margin: 0 0 1em; }
+ul, ol { padding-left: 1.4em; margin: 0 0 1em; }
+li { margin: .2em 0; }
+.meta { color: var(--muted); font-size: .88rem; margin-bottom: 2em; }
+.abstract { background: var(--surface); border-radius: 8px; padding: 18px 22px; margin: 1.5em 0; }
+.abstract p:last-child { margin: 0; }
+code, .mono { font-family: var(--font-mono); font-size: .88em; }
+pre { font-family: var(--font-mono); font-size: .82rem; line-height: 1.6; background: var(--surface); border-radius: 6px; padding: 14px 16px; overflow-x: auto; margin: 1em 0 1.4em; }
+.tbl { overflow-x: auto; margin: 1em 0 .6em; }
+table { border-collapse: collapse; width: 100%; font-size: .87rem; font-variant-numeric: tabular-nums; line-height: 1.55; }
+th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+thead th { border-bottom: 1.5px solid var(--strong-line); color: var(--muted); font-weight: 500; font-size: .8rem; white-space: nowrap; }
+td.n, th.n { text-align: right; white-space: nowrap; }
+.tbl.wide td { white-space: nowrap; }
+tr.focus td { font-weight: 700; color: var(--accent-ink); }
+tr.muted td { color: var(--muted); }
+.cap { font-size: .8rem; color: var(--muted); margin: 0 0 1.4em; }
+.formula { font-family: var(--font-mono); background: var(--surface); padding: 10px 14px; border-radius: 6px; overflow-x: auto; margin: .8em 0 1.2em; font-size: .9rem; }
+.kv { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: 10px; margin: 1em 0 1.4em; }
+.kv > div { border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; min-width: 0; }
+.kv .k { font-size: .78rem; color: var(--muted); }
+.kv .v { font-weight: 700; }
+.chart { margin: 1.2em 0 .4em; }
+.chart .ttl { font-weight: 700; font-size: .92rem; }
+.chart .sub { font-size: .8rem; color: var(--muted); }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: .8rem; color: var(--muted); margin: .4em 0 .2em; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+.chart svg { width: 100%; height: auto; display: block; max-width: 44rem; }
+.chart text { font-family: var(--font-body); font-size: 12px; fill: var(--muted); }
+.chart text.val { fill: var(--fg); font-weight: 700; text-anchor: middle; font-variant-numeric: tabular-nums; }
+.chart text.cat { text-anchor: middle; font-size: 13px; fill: var(--fg); }
+.chart .axis { stroke: var(--strong-line); stroke-width: 1; }
+.chart rect:hover { opacity: .85; }
+pre.diagram { font-size: .8rem; }
+a { color: var(--accent-ink); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+footer { margin-top: 4em; font-size: .8rem; color: var(--muted); border-top: 1px solid var(--line); padding-top: 1em; }
+</style>
+
+<div class="page">
+<nav class="toc" aria-label="目錄">
+  <div class="h">目錄</div>
+  <ol>
+    <li><a href="#summary">摘要</a></li>
+    <li><a href="#bg">1 背景</a></li>
+    <li><a href="#arch">2 系統架構</a></li>
+    <li><a href="#tasks">3 任務</a></li>
+    <li><a href="#exp">4 實驗與結果</a>
+      <ol>
+        <li><a href="#e0">4.1 管線驗證</a></li>
+        <li><a href="#e2">4.2 CPU 縮小版</a></li>
+        <li><a href="#e3">4.3 GPU 消融第一輪</a></li>
+        <li><a href="#e4">4.4 GPU 消融第二輪</a></li>
+        <li><a href="#e5">4.5 各階段對照</a></li>
+        <li><a href="#e6">4.6 L1、L2 完整規模</a></li>
+        <li><a href="#e7">4.7 推論速度</a></li>
+      </ol>
+    </li>
+    <li><a href="#concl">5 結論</a></li>
+    <li><a href="#issues">6 工程問題與解法</a></li>
+    <li><a href="#next">7 後續工作</a></li>
+    <li><a href="#appx">附錄</a></li>
+  </ol>
+</nav>
+
+<main>
+<h1>Laya + MCTS：以 AlphaZero 式自我對弈強化文字決策模型</h1>
+<div class="meta">技術報告　｜　涵蓋範圍：專案開始至第二輪 GPU 消融實驗與推論速度測試（2026-10-08）　｜　來源：<code>docs/project_report.md</code></div>
+
+<section id="summary">
+<div class="abstract">
+<p>本研究以非自回歸決策模型 Laya 同時擔任 AlphaZero 架構中的 policy 與 value 網路，搭配 PUCT 蒙地卡羅樹搜尋，在文字環境上進行 Expert Iteration。在 TextWorld 中僅提供最終目標、需自行探索的關卡上，self-play 相對於「僅以 teacher 資料重複訓練」的對照組帶來穩定增益（成對差距：L2-goal +0.123 ± 0.049，L3-goal +0.227 ± 0.061；15 組同 seed 比較全數為正），且任務越難增益越大。增益主要來自價值網路：在 L3-goal，搜尋帶來的成功率增量於對照組由 0.14 縮至 0.06，於 self-play 組則擴大至 0.28。目標逐步給定的關卡（L1、L2）與料理關卡 C1 在 warm start 後已接近理論最佳，self-play 無可測增益。推論成本方面，PUCT16 每步約 206 ms，為 greedy 的 15.6 倍；模擬次數增為 64 次時每步僅增加約 20%，時間主要耗於環境而非模型。</p>
+</div>
+
+<div class="tbl"><table>
+<thead><tr><th>問題</th><th>結論</th><th>依據</th></tr></thead>
+<tbody>
+<tr><td>整體 AlphaZero 迴圈是否可運作</td><td>可</td><td>Countdown：Laya + PUCT16 達 0.93，無 Laya 搜尋 0.30；代數任務可自零學起</td></tr>
+<tr><td>self-play 在 TextWorld 是否有效</td><td>在需探索的關卡有效，難度越高增益越大</td><td>相對 teacher-only 成對差距：L2-goal +0.12、L3-goal +0.22</td></tr>
+<tr><td>何時無效</td><td>模仿 teacher 即達最優的關卡</td><td>L1、L2、C1：warm start 後近理論最佳，差距 ≤ 0.01</td></tr>
+<tr><td>增益機制</td><td>價值網路具鑑別力後搜尋生效</td><td>L3-goal 搜尋增益：teacher-only +0.04，self-play +0.21（reward）</td></tr>
+<tr><td>進階 self-play 變體</td><td>無顯著優勢</td><td>與 control 差距 &lt; 0.02，落於雜訊內</td></tr>
+<tr><td>搜尋成本</td><td>每步 0.2–0.25 秒；模擬 ×4 每步僅 +20%</td><td>L2-goal：greedy 13 ms、PUCT16 206 ms、PUCT64 250 ms</td></tr>
+<tr><td>目前瓶頸</td><td>self-play 於 1–2 輪內飽和</td><td>L3-goal 約 70% 的增益發生於第 1 輪</td></tr>
+</tbody></table></div>
+</section>
+
+<section id="bg">
+<h2><span class="n">1</span>背景</h2>
+<h3><span class="n">1.1</span>AlphaZero 與 Expert Iteration</h3>
+<p>AlphaZero 由兩個相互強化的元件組成。神經網路對局面 <i>s</i> 輸出 policy <i>p</i>(<i>a</i>|<i>s</i>)（各合法動作的先驗機率）與 value <i>v</i>(<i>s</i>) ∈ [−1, 1]（局面最終結果的估計）；MCTS 以網路輸出引導前瞻搜尋，產生優於網路本身的決策。訓練迴圈為：以「網路 + 搜尋」進行 self-play；以搜尋的拜訪分佈作為 policy 目標、以對局結果作為 value 目標訓練網路；網路改進後搜尋隨之改進。此「搜尋為教師、網路為學生」的框架即 Expert Iteration。</p>
+<h3><span class="n">1.2</span>Laya</h3>
+<p>Laya（Convai Innovations）為非自回歸決策模型：輸入「情境 + 問題 + 選項」，以單次前向計算輸出各選項機率。本研究使用 <code>laya-multilingual</code>（644 MB，多語 BERT 類編碼器），可於 CPU 執行。使用兩種題型：</p>
+<ul>
+  <li><code>choice</code>（多選一）作為 policy：選項即合法動作。</li>
+  <li><code>noul</code>（是 / 否）作為 value：「此局面能否成功」，<i>V</i> = 2·P(是) − 1。</li>
+</ul>
+<p>各題型具溫度參數，用於機率校準。</p>
+<h3><span class="n">1.3</span>任務選擇</h3>
+<p>棋類狀態不適合以文字表達，因此選擇狀態本身為文字、可模擬、可自動判定成敗的任務：管線驗證階段使用 Countdown 與一元一次方程逐步化簡；主實驗使用 TextWorld（可控制房間數、物件數與任務步數的文字冒險遊戲產生器）；後續規劃 ALFWorld。</p>
+</section>
+
+<section id="arch">
+<h2><span class="n">2</span>系統架構</h2>
+<h3><span class="n">2.1</span>整體迴圈</h3>
+<pre class="diagram">0. 基準評估：不使用 Laya 的搜尋（均勻先驗、隨機 rollout）
+1. 初始評估：未微調的 Laya
+2. Warm start：teacher 產生示範資料 → 訓練 Laya
+3. 評估 → gate 記錄參考分數
+4. 重複 N 輪：
+   a. Self-play：Laya + MCTS 進行 64 局，記錄每步搜尋結果
+   b. 每步轉為訓練樣本（policy 目標、value 目標）存入 replay buffer
+   c. 以 replay buffer 訓練 Laya，校準溫度
+   d. Gate：於驗證集評分；退步超過容許值即還原上一版權重
+   e. 於測試集評估保留的權重
+輸出：metrics.jsonl、summary.md、checkpoint</pre>
+<p>各元件（環境、評估器、搜尋、teacher、self-play、訓練器）透過註冊表以名稱組裝，替換環境或搜尋法僅需修改設定檔。</p>
+
+<h3><span class="n">2.2</span>環境介面</h3>
+<p>搜尋需自同一局面展開多個分支，因此狀態設計為不可變：<code>step(state, action)</code> 回傳新狀態，原狀態不變。資料分為 train、val、test 三組，TextWorld 以互不重疊的 seed 範圍產生：</p>
+<div class="tbl"><table>
+<thead><tr><th>切分</th><th class="n">遊戲數</th><th>seed 範圍</th><th>用途</th></tr></thead>
+<tbody>
+<tr><td>train</td><td class="n">150</td><td class="mono">0–149</td><td>teacher 示範、self-play</td></tr>
+<tr><td>val</td><td class="n">40</td><td class="mono">2,000,000–2,000,039</td><td>gate 決策</td></tr>
+<tr><td>test</td><td class="n">100</td><td class="mono">1,000,000–1,000,099</td><td>報告分數</td></tr>
+</tbody></table></div>
+
+<h3><span class="n">2.3</span>Laya 作為 policy / value 網路</h3>
+<p>每個局面轉為兩個共用狀態文字的 Laya 問題。policy 問題為「Which command brings you closest to completing the goal?」，選項為合法指令；value 問題為「Will the goal be completed within the remaining steps?」。實作要點：</p>
+<ul>
+  <li>Laya 內建批次 API 要求同批問題相同，而搜尋樹各葉節點選項不同；因此自行組合 token 序列，將多個葉節點合併為一批。</li>
+  <li>依序列長度排序後分批，避免短的 value 列被補齊至長的 policy 列（Countdown 吞吐量由 1.6 提升至 4.1 rows/s）。</li>
+  <li>以快取避免重複評估同一局面；模型更新後清空快取。</li>
+</ul>
+
+<h3><span class="n">2.4</span>搜尋：PUCT</h3>
+<div class="formula">score(a) = Q(a) + c_puct · P(a) · √N(s) / (1 + N(a))</div>
+<p>葉節點以 Laya 估計 prior 與 value，value 沿路徑回傳更新 Q。根節點的拜訪次數分佈即為決策與 policy 訓練目標。設定如下：</p>
+<div class="kv">
+  <div><div class="k">模擬次數 / 批次</div><div class="v">16 / 8（評估一律 puct16）</div></div>
+  <div><div class="k">c_puct</div><div class="v">1.5</div></div>
+  <div><div class="k">批次葉節點分散</div><div class="v">virtual loss</div></div>
+  <div><div class="k">Dirichlet 雜訊（僅 self-play 根節點）</div><div class="v">α = 0.3，比例 25%</div></div>
+  <div><div class="k">拜訪數平手</div><div class="v">依序比較 Q、prior</div></div>
+</div>
+<p>另實作 Gumbel AlphaZero；管線驗證顯示價值網路較弱時 PUCT 較穩定，故後續皆採 PUCT。</p>
+
+<h3><span class="n">2.5</span>Self-play 與訓練目標</h3>
+<div class="tbl"><table>
+<thead><tr><th>目標</th><th>內容</th><th>說明</th></tr></thead>
+<tbody>
+<tr><td>Policy</td><td>根節點拜訪分佈，經銳化（溫度 0.25）</td><td>16 次模擬之分佈過於平坦，未銳化會稀釋 warm start 學得的偏好</td></tr>
+<tr><td>Value</td><td>該局最終 reward</td><td>映射至 [−1, 1]</td></tr>
+<tr><td>失敗局</td><td>僅訓練 value</td><td><code>failed_policy_weight: 0</code>，不模仿失敗走法</td></tr>
+<tr><td>Replay buffer</td><td>全部 teacher 資料 + 全部 self-play 資料</td><td><code>teacher_mix: 1.0</code>；每輪以整個 buffer 訓練 1 epoch</td></tr>
+</tbody></table></div>
+
+<h3><span class="n">2.6</span>Reward 設計</h3>
+<div class="formula">R = 0.5 + 0.5 · 0.9<sup>n</sup>（成功，n 為步數）；R = 0（失敗）</div>
+<p>成功下限 0.5 確保「解出」恆明顯優於「未解出」；隨步數衰減以鼓勵效率。初始版本僅使用 0.9<sup>n</sup>，步數多時 reward 趨近 0、與失敗難以區分，導致價值網路傾向拖延。參考值：3 步 0.864、5 步 0.795、8 步 0.715。</p>
+
+<h3><span class="n">2.7</span>訓練器</h3>
+<ul>
+  <li>損失為 soft cross-entropy：policy 目標為拜訪分佈，value 目標為 [1 − p, p]。</li>
+  <li>訓練時隨機打亂選項順序，避免位置偏差。</li>
+  <li>凍結 token embedding（25.6 萬字詞表約占 60% 參數），並使用 gradient checkpointing。</li>
+  <li>每輪保留 10%（上限 400 筆）資料不訓練，用於溫度校準。</li>
+  <li>CUDA 上使用混合精度：Ampere 以上 bf16；T4 / V100 使用 fp16 與 loss scaling。</li>
+</ul>
+
+<h3><span class="n">2.8</span>Gate 與評估設計</h3>
+<p>借自 AlphaGo Zero：每輪訓練後以驗證集評分，PUCT16 reward 低於歷史最佳逾 0.02 即還原上一版權重。評估設計歷經一次修正：</p>
+<div class="tbl"><table>
+<thead><tr><th>版本</th><th>做法</th><th>問題</th></tr></thead>
+<tbody>
+<tr><td>第一輪</td><td>gate 與報告共用 40 局測試遊戲</td><td>模型選擇使用測試題，分數偏高；報告的 final 可能為被還原的版本</td></tr>
+<tr><td>第二輪（v2）</td><td>gate 以 40 局驗證集決定；保留的權重於 100 局測試集評估；被還原之輪沿用前次結果</td><td>—</td></tr>
+</tbody></table></div>
+
+<h3><span class="n">2.9</span>平行對局架構</h3>
+<p>單局循序執行時 GPU 使用率僅 0–1%：TextWorld 每展開一個節點需重播歷史（約 50 ms，單核），而 GPU 處理一批僅需數毫秒。改採 AlphaZero 式架構：多個 actor 程序各自持有環境、搜尋樹並負責 token 化（每局面約 1.4 ms），將葉節點請求送至持有 GPU 模型的主程序合併批次推論。actor 數預設為 CPU 核心數 − 1（上限 32），每局獨立亂數種子，結果與排程無關。每個 actor 設記憶體上限 16 GB、每局時間上限 30 分鐘，超出即記為失敗並替換 actor。實測基準評估加速 4.6 倍，整體實驗由 72 分鐘降至 41 分鐘。</p>
+</section>
+
+<section id="tasks">
+<h2><span class="n">3</span>任務</h2>
+<h3><span class="n">3.1</span>管線驗證任務</h3>
+<ul>
+  <li><b>Countdown</b>：每步選兩數做四則運算，最終湊出目標數。reward 為是否成功；teacher 為窮舉搜尋。</li>
+  <li><b>一元一次方程</b>：如 <code>5 = (x+3)/3 + (x+3)/2</code>，每步選擇一個代數改寫，化為 <code>x = c</code> 即成功，以 SymPy 驗證。reward = 0.5 + 0.5·0.9<sup>n</sup>；teacher 為廣度優先搜尋（最短步數）。</li>
+</ul>
+<h3><span class="n">3.2</span>TextWorld</h3>
+<div class="tbl"><table>
+<thead><tr><th>關卡</th><th class="n">房間</th><th class="n">物件</th><th class="n">任務步數</th><th>目標描述</th><th class="n">步數上限</th></tr></thead>
+<tbody>
+<tr><td>L1</td><td class="n">3</td><td class="n">6</td><td class="n">3</td><td>逐步指示</td><td class="n">10</td></tr>
+<tr><td>L2</td><td class="n">5</td><td class="n">10</td><td class="n">5</td><td>逐步指示</td><td class="n">15</td></tr>
+<tr><td>L2-goal</td><td class="n">5</td><td class="n">10</td><td class="n">5</td><td>僅最終目標</td><td class="n">20</td></tr>
+<tr><td>L3-goal</td><td class="n">8</td><td class="n">15</td><td class="n">8</td><td>僅最終目標</td><td class="n">30</td></tr>
+<tr><td>C1</td><td class="n">1</td><td class="n">—</td><td class="n">—</td><td>料理：1 種食材，讀食譜後操作</td><td class="n">15</td></tr>
+<tr><td>C2</td><td class="n">6</td><td class="n">—</td><td class="n">—</td><td>料理：2 種食材</td><td class="n">30</td></tr>
+</tbody></table></div>
+<p><b>狀態文字</b>包含：目標（去除 TextWorld 隨機問候語）、近 6 個動作、已造訪房間、已讀重要內容（如食譜）、物品欄、位置描述、上一步結果與剩餘步數。<code>look</code>、<code>inventory</code>、<code>examine</code> 等不改變世界的指令予以濾除（料理關卡保留 <code>examine cookbook</code>）。</p>
+<pre>Goal: Please look and see that the Henderson's style chest is unlocked.
+Recent actions: close toolbox.
+You are carrying: a licorice strip and a nest of grubs.
+Location: Studio. ... It looks like it's a Henderson's style chest. ...
+          There is a closed door leading west. There is an unguarded exit to the east.
+Last result: You close the toolbox.
+Steps left: 19.</pre>
+<p><b>Teacher</b>：取自 TextWorld 依任務進度提供的最佳剩餘指令（<code>policy_commands</code>），並以 30% 機率隨機動作（<code>explore: 0.3</code>），使示範涵蓋偏離最佳路線的狀態。料理關卡的 teacher 先讀食譜。</p>
+<p><b>實作</b>：狀態以「遊戲 + 動作歷史」表示，取得觀察時重置並重播歷史（重置約 5 ms、每步約 7 ms），因 <code>copy()</code> 需 52 ms 且直接還原模擬器狀態會使任務追蹤不同步。每個遊戲保留至多 4 個引擎，並挑選已位於請求歷史前綴上的引擎續行；觀察以（遊戲, 歷史）快取。引擎時間因此減少約 30%，結果不變。</p>
+</section>
+
+<section id="exp">
+<h2><span class="n">4</span>實驗與結果</h2>
+<h4>指標與統計</h4>
+<ul>
+  <li><b>PUCT16 reward</b>：Laya + 16 次模擬 PUCT 於評估遊戲之平均 reward（主要指標）。</li>
+  <li><b>成功率</b>；<b>平均步數</b>（含失敗局；L 關卡無失敗條件，失敗必走至上限：L1 10、L2 15、L2-goal 20、L3-goal 30）；<b>成功局平均步數</b>（僅計解出的局）。舊紀錄的成功局平均步數以（平均步數 − (1 − 成功率) × 上限）÷ 成功率精確換算。</li>
+  <li><b>Greedy</b>：不搜尋，直接取 Laya 最高機率動作，反映網路本身能力。</li>
+  <li><b>基準</b>：<code>uniform-puct16</code>（均勻先驗、value 0）；<code>rollout-puct16</code>（隨機 rollout 估值）。</li>
+  <li><b>雜訊</b>：40 局 reward 不確定性約 ±0.03–0.05；100 局約 ±0.02–0.03。± 為跨 seed 標準差；成對差距為同 seed 相減後平均，以抵消 warm start 之 seed 差異。</li>
+</ul>
+
+<h3 id="e0"><span class="n">4.1</span>管線驗證（CPU，2026-10-03）</h3>
+<div class="tbl"><table>
+<thead><tr><th>任務</th><th>模型</th><th>起點</th><th>PUCT16（初始 → 最終）</th><th>Greedy</th><th>均勻先驗搜尋</th></tr></thead>
+<tbody>
+<tr><td>Countdown</td><td>Laya</td><td>teacher 150 題 + 1 輪</td><td>0.17 → 0.83 → 0.93</td><td>0.70</td><td>0.30</td></tr>
+<tr><td>代數</td><td>Laya</td><td>teacher 150 題 + 4 輪</td><td>0.35 → 0.776 → 0.777</td><td>0.776</td><td>0.727</td></tr>
+<tr><td>代數</td><td>Laya</td><td>無 teacher，4 輪</td><td>0.35 → 0.68 → 0.71</td><td>0.02 → 0.71</td><td>0.727</td></tr>
+<tr><td>代數</td><td>微型</td><td>無 teacher，8 輪</td><td>0.07 → 0.54 → 0.74</td><td>0.00 → 0.61</td><td>0.730</td></tr>
+<tr><td>代數</td><td>微型</td><td>teacher 150 題 + 6 輪</td><td>0.73 → 0.75</td><td>0.60 → 0.72</td><td>0.730</td></tr>
+<tr><td>代數</td><td>微型</td><td>teacher 1000 題 + 6 輪</td><td>0.769 → 0.772</td><td>0.776</td><td>0.730</td></tr>
+<tr><td>Countdown</td><td>微型</td><td>teacher 1000 題 + 6 輪</td><td>0.22 → 0.37 → 0.35</td><td>0.15</td><td>0.30</td></tr>
+</tbody></table></div>
+<p class="cap">Countdown reward 為成功率；代數理論最優約 0.777（平均 5.6 步）。評估 30 題、self-play 每輪 16 局。</p>
+<p>結論：迴圈可運作；預訓練 Laya 的樣本效率遠高於隨機初始化的微型模型（Countdown：150 題 0.83 vs 1000 題 0.37）；無 teacher 的純 self-play 亦可學習（微型模型 greedy 0.00 → 0.61、PUCT16 0.07 → 0.74，超越均勻先驗搜尋）；改用 oracle 價值時同一搜尋成功率由 0.29 升至 0.80–0.93，顯示搜尋效益取決於價值估計。</p>
+
+<h3 id="e2"><span class="n">4.2</span>TextWorld CPU 縮小版（評估 20–30 局）</h3>
+<div class="tbl"><table>
+<thead><tr><th>關卡</th><th>Warm start（reward / 成功率）</th><th>Self-play 後</th></tr></thead>
+<tbody>
+<tr><td>L1</td><td>0.837 / 0.97</td><td>0.866 / 1.00（最優）</td></tr>
+<tr><td>L2</td><td>0.761 / 1.00</td><td>0.71–0.76（持平）</td></tr>
+<tr><td>L2-goal，無 gate</td><td>成功率 0.95</td><td>退步至 0.65</td></tr>
+<tr><td>L2-goal，有 gate</td><td>0.754</td><td>3 輪皆被還原（0.611 / 0.534 / 0.694）</td></tr>
+</tbody></table></div>
+<p>Self-play 成功局平均 8–10 步，最佳約 5 步：模型模仿自身繞遠路的走法，且 16 次模擬過淺，搜尋目標未優於網路本身。據此設計第一輪消融。</p>
+
+<h3 id="e3"><span class="n">4.3</span>GPU 消融第一輪：self-play 目標設計</h3>
+<div class="tbl"><table>
+<thead><tr><th>變體</th><th>做法</th><th>檢驗假設</th><th class="n">final</th><th class="n">相對 warm start</th></tr></thead>
+<tbody>
+<tr><td>control</td><td>成功局搜尋分佈為 policy 目標</td><td>對照組</td><td class="n">0.677 ± 0.053</td><td class="n">+0.079</td></tr>
+<tr><td>A-efficient</td><td>僅學步數 ≤ 1.3 × 自身最佳且 reward 居本輪前 50% 的成功局</td><td>退步源於模仿繞遠路</td><td class="n">0.702 ± 0.024</td><td class="n">+0.111</td></tr>
+<tr><td>B-value-only</td><td>self-play 僅訓練 value</td><td>policy 被模糊目標稀釋</td><td class="n">—</td><td class="n">—</td></tr>
+<tr><td>C-sims48</td><td>self-play 使用 48 次模擬</td><td>搜尋過淺</td><td class="n">0.681 ± 0.027</td><td class="n">+0.059</td></tr>
+<tr><td>AC</td><td>A + C</td><td>修正可疊加</td><td class="n">0.653 ± 0.010</td><td class="n">+0.025</td></tr>
+<tr><td>BC</td><td>B + C</td><td>修正可疊加</td><td class="n">0.648 ± 0.105</td><td class="n">+0.035</td></tr>
+<tr><td>D-dagger</td><td>teacher 重新標註 self-play 狀態</td><td>模仿學習上限</td><td class="n">0.638 ± 0.025</td><td class="n">+0.043</td></tr>
+</tbody></table></div>
+<p class="cap">L2-goal，各 3 個 seed，PUCT16 reward。B-value-only 有一個 seed 未完成，不予採計。</p>
+<p>本輪結論有限：gate 與報告共用測試遊戲致分數偏高；部分實驗重啟後新舊紀錄混雜；未完成之 seed 被納入平均；且缺少關鍵對照組。每輪以含全部 teacher 資料的 buffer 重新訓練，至第 8 輪 teacher 資料已被學習約 10 次，「相對 warm start 的進步」無法歸因於 self-play。上述問題修正後進行第二輪。</p>
+
+<h3 id="e4"><span class="n">4.4</span>GPU 消融第二輪（v2）：self-play 的實際貢獻</h3>
+<p><b>修正項目</b>：採 v2 評估設計（§2.8）；新增對照組 <b>T-teacher-only</b>，迴圈完全相同但 self-play 資料不加入 replay buffer；彙整僅採各實驗最後一次紀錄，並計算相對 T-teacher-only 的成對差距。</p>
+<p><b>共同設定</b>：teacher 150 題、warm start 2 epoch、8 輪 self-play、每輪 64 局、PUCT 16 次模擬（批次 8）、policy 目標銳化 0.25、gate 容許 0.02、3 個 seed。</p>
+
+<h4>結果總表（PUCT16，100 局測試，最終保留的權重）</h4>
+<div class="tbl wide"><table>
+<thead><tr><th>關卡</th><th>變體</th><th class="n">reward</th><th class="n">成功率</th><th class="n">平均步數</th><th class="n">成功局步數</th><th class="n">相對 warm start</th><th class="n">相對 teacher-only（成對）</th><th class="n">greedy</th><th>gate 接受</th></tr></thead>
+<tbody>
+<tr class="muted"><td>L2-goal</td><td>T-teacher-only</td><td class="n">0.613 ± 0.033</td><td class="n">0.79 ± 0.05</td><td class="n">8.8 ± 0.5</td><td class="n">5.8 ± 0.2</td><td class="n">+0.015</td><td class="n">—</td><td class="n">0.579</td><td>2/8、6/8、5/8</td></tr>
+<tr class="focus"><td>L2-goal</td><td>control</td><td class="n">0.736 ± 0.022</td><td class="n">0.94 ± 0.03</td><td class="n">6.5 ± 0.5</td><td class="n">5.6 ± 0.2</td><td class="n">+0.140</td><td class="n">+0.123 ± 0.049</td><td class="n">0.590</td><td>5/8、7/8、7/8</td></tr>
+<tr><td>L2-goal</td><td>A-efficient</td><td class="n">0.727 ± 0.035</td><td class="n">0.94 ± 0.04</td><td class="n">6.9 ± 0.9</td><td class="n">6.0 ± 0.4</td><td class="n">+0.120</td><td class="n">+0.115 ± 0.043</td><td class="n">0.612</td><td>6/8、6/8、5/8</td></tr>
+<tr class="muted"><td>L3-goal</td><td>T-teacher-only</td><td class="n">0.413 ± 0.060</td><td class="n">0.59 ± 0.08</td><td class="n">18.3 ± 2.1</td><td class="n">10.2 ± 1.0</td><td class="n">+0.043</td><td class="n">—</td><td class="n">0.371</td><td>7/8、7/8、4/8</td></tr>
+<tr class="focus"><td>L3-goal</td><td>control</td><td class="n">0.640 ± 0.004</td><td class="n">0.89 ± 0.01</td><td class="n">11.0 ± 0.3</td><td class="n">8.6 ± 0.5</td><td class="n">+0.219</td><td class="n">+0.227 ± 0.061</td><td class="n">0.428</td><td>3/8、2/8、5/8</td></tr>
+<tr><td>L3-goal</td><td>A-efficient</td><td class="n">0.643 ± 0.026</td><td class="n">0.89 ± 0.04</td><td class="n">11.0 ± 0.9</td><td class="n">8.7 ± 0.6</td><td class="n">+0.249</td><td class="n">+0.231 ± 0.063</td><td class="n">0.445</td><td>4/8、4/8、5/8</td></tr>
+<tr><td>L3-goal</td><td>C-sims48</td><td class="n">0.624 ± 0.036</td><td class="n">0.88 ± 0.04</td><td class="n">11.6 ± 1.3</td><td class="n">9.1 ± 0.5</td><td class="n">+0.223</td><td class="n">+0.211 ± 0.025</td><td class="n">0.465</td><td>3/8、4/8、4/8</td></tr>
+<tr><td>C1</td><td>全部變體（4 個）</td><td class="n">0.804</td><td class="n">1.00</td><td class="n">4.7</td><td class="n">4.7</td><td class="n">0.000</td><td class="n">0.000</td><td class="n">0.804</td><td>皆 8/8</td></tr>
+</tbody></table></div>
+<p class="cap">平均步數含失敗局；任務最短步數 L2-goal 5、L3-goal 8。gate 接受：8 輪中新權重被保留的輪數（3 個 seed）。</p>
+
+<h4>發現 1：self-play 有效，且難度越高增益越大</h4>
+<div class="tbl"><table>
+<thead><tr><th>關卡</th><th>control</th><th>A-efficient</th><th>C-sims48</th></tr></thead>
+<tbody>
+<tr><td>L2-goal</td><td>+0.142、+0.067、+0.161</td><td>+0.152、+0.068、+0.123</td><td>—</td></tr>
+<tr><td>L3-goal</td><td>+0.162、+0.235、+0.283</td><td>+0.178、+0.213、+0.300</td><td>+0.187、+0.209、+0.237</td></tr>
+</tbody></table></div>
+<p class="cap">各 seed 相對同 seed T-teacher-only 的 reward 差距。</p>
+<p>15 組比較全數為正；L3-goal 平均 +0.22（t ≈ 6），L2-goal 平均 +0.12。僅以 teacher 資料重複訓練幾乎無增益（L2-goal +0.015、L3-goal +0.04）並出現過度擬合：L3-goal teacher-only 之訓練資料 policy 準確率達 0.98，但 seed 2 測試成績由 0.474 降至 0.361。</p>
+
+<h4>發現 2：進階變體無顯著優勢</h4>
+<p>L3-goal 上 control、A-efficient、C-sims48 的差距皆小於 0.02，落於雜訊內；C-sims48 的 self-play 時間為 1.5–2 倍。採用最簡單的 control 即可。</p>
+
+<h4>發現 3：增益主要來自價值網路</h4>
+<div class="tbl"><table>
+<thead><tr><th>L3-goal，第 8 輪</th><th class="n">value 損失</th><th class="n">保留資料 value Brier</th><th class="n">搜尋增益（PUCT16 − greedy）</th></tr></thead>
+<tbody>
+<tr class="muted"><td>T-teacher-only</td><td class="n">0.626–0.631（停滯）</td><td class="n">≈ 0.000</td><td class="n">+0.04</td></tr>
+<tr class="focus"><td>control</td><td class="n">0.495–0.503</td><td class="n">0.014–0.026</td><td class="n">+0.21</td></tr>
+</tbody></table></div>
+<p>Teacher 每局皆成功，value 標籤恆為「成功」：價值網路極易擬合（誤差 ≈ 0），但不具鑑別力，搜尋僅帶來 +0.04。Self-play 引入真實結果（含失敗與繞路），且分佈於搜尋實際到達的狀態，使價值估計具鑑別力，搜尋增益達 +0.21。L2-goal 同理（+0.03 vs +0.15）。第一輪 D-dagger 未見改善亦可由此解釋：teacher 標註的 value 假設後續皆走最佳路線，同樣過於樂觀。</p>
+<div class="chart" id="c-gain"></div>
+<p>以成功率檢視（100 局測試，3 個 seed 平均）：</p>
+<div class="tbl"><table>
+<thead><tr><th>關卡</th><th>變體</th><th class="n">greedy 成功率</th><th class="n">PUCT16 成功率</th><th class="n">搜尋多解出比例</th></tr></thead>
+<tbody>
+<tr class="muted"><td>L2-goal</td><td>T-teacher-only</td><td class="n">0.65 → 0.74</td><td class="n">0.76 → 0.79</td><td class="n">+0.11 → +0.05</td></tr>
+<tr class="focus"><td>L2-goal</td><td>control</td><td class="n">0.63 → 0.76</td><td class="n">0.77 → 0.94</td><td class="n">+0.14 → +0.18</td></tr>
+<tr><td>L2-goal</td><td>A-efficient</td><td class="n">0.66 → 0.79</td><td class="n">0.78 → 0.94</td><td class="n">+0.12 → +0.15</td></tr>
+<tr class="muted"><td>L3-goal</td><td>T-teacher-only</td><td class="n">0.37 → 0.53</td><td class="n">0.51 → 0.59</td><td class="n">+0.14 → +0.06</td></tr>
+<tr class="focus"><td>L3-goal</td><td>control</td><td class="n">0.44 → 0.61</td><td class="n">0.58 → 0.89</td><td class="n">+0.14 → +0.28</td></tr>
+<tr><td>L3-goal</td><td>A-efficient</td><td class="n">0.43 → 0.63</td><td class="n">0.54 → 0.89</td><td class="n">+0.11 → +0.26</td></tr>
+<tr><td>L3-goal</td><td>C-sims48</td><td class="n">0.45 → 0.66</td><td class="n">0.55 → 0.88</td><td class="n">+0.10 → +0.22</td></tr>
+</tbody></table></div>
+<p class="cap">各欄為 warm start → 最終。</p>
+<p>Policy 本身在兩組進步幅度相近（L3-goal greedy 成功率：teacher-only +0.16、control +0.17）。差異在於搜尋的額外貢獻：warm start 時兩組皆為 10–14%，此後 teacher-only 縮小至 5–6%，self-play 擴大至 15–28%。</p>
+
+<h4>成功率與步數</h4>
+<div class="tbl"><table>
+<thead><tr><th>關卡</th><th>變體</th><th class="n">成功率</th><th class="n">平均步數</th><th class="n">成功局步數</th></tr></thead>
+<tbody>
+<tr class="muted"><td>L2-goal</td><td>T-teacher-only</td><td class="n">0.76 → 0.79</td><td class="n">9.2 → 8.8</td><td class="n">5.8 → 5.8</td></tr>
+<tr class="focus"><td>L2-goal</td><td>control</td><td class="n">0.77 → 0.94</td><td class="n">9.4 → 6.5</td><td class="n">6.3 → 5.6</td></tr>
+<tr><td>L2-goal</td><td>A-efficient</td><td class="n">0.78 → 0.94</td><td class="n">9.1 → 6.9</td><td class="n">6.1 → 6.0</td></tr>
+<tr class="muted"><td>L3-goal</td><td>T-teacher-only</td><td class="n">0.51 → 0.59</td><td class="n">19.2 → 18.3</td><td class="n">8.7 → 10.2</td></tr>
+<tr class="focus"><td>L3-goal</td><td>control</td><td class="n">0.58 → 0.89</td><td class="n">17.7 → 11.0</td><td class="n">8.8 → 8.6</td></tr>
+<tr><td>L3-goal</td><td>A-efficient</td><td class="n">0.54 → 0.89</td><td class="n">18.4 → 11.0</td><td class="n">8.5 → 8.7</td></tr>
+<tr><td>L3-goal</td><td>C-sims48</td><td class="n">0.55 → 0.88</td><td class="n">18.1 → 11.6</td><td class="n">8.2 → 9.1</td></tr>
+</tbody></table></div>
+<p class="cap">PUCT16，warm start → 最終，100 局測試，3 個 seed 平均。</p>
+<ul>
+  <li>Self-play 的增益幾乎全部來自成功率（L3-goal 0.58 → 0.89、L2-goal 0.77 → 0.94），對照組僅 0.51 → 0.59、0.76 → 0.79。</li>
+  <li>成功局於 warm start 時已具效率（L3-goal 8.2–8.8 步，任務 8 步），self-play 後大致不變。Self-play 使模型解出原本無法解出的局，而非縮短已會解的局。</li>
+  <li>總表中 control 與 teacher-only 成功局步數相差 1.6 步，主要源於 teacher-only 自身退步（8.7 → 10.2），與過度擬合一致。</li>
+  <li>成功局步數僅於解出的局上平均；成功率提高後新增的多為較難、較長的局，可能拉高平均，故成功率差異大的組別間不宜直接比較此欄。</li>
+  <li>平均步數由約 18 降至 11，主因為失敗局（以 30 步計）減少。</li>
+</ul>
+
+<h4>發現 4：self-play 快速飽和</h4>
+<p>L3-goal control 第 1 輪後平均 0.580，最終 0.640，約 70% 的增益發生於第 1 輪；此後 gate 每 8 輪僅接受 2–5 輪，多數決策落於 40 局驗證集的雜訊範圍。L3-goal 目前成功率約 89%、成功局 8.6 步；若每局皆以此步數解出，reward 約 0.70，剩餘約 0.06 的空間主要在成功率。L2-goal 已達上限（約 0.74）。</p>
+<h4>發現 5：C1 無比較空間</h4>
+<p>Warm start 後所有變體、所有 seed 皆 100% 成功、平均 4.73 步，reward 0.804 = 0.5 + 0.5·0.9<sup>4.73</sup>，完全依循 teacher 路線，greedy 與搜尋結果一致。</p>
+
+<h3 id="e5"><span class="n">4.5</span>各階段對照：未微調 Laya、warm start 與 self-play</h3>
+<div class="tbl"><table>
+<thead><tr><th>方法</th><th class="n">L2-goal PUCT16</th><th class="n">L2-goal greedy</th><th class="n">L3-goal PUCT16</th><th class="n">L3-goal greedy</th><th class="n">C1 PUCT16</th><th class="n">C1 greedy</th></tr></thead>
+<tbody>
+<tr class="muted"><td>均勻先驗搜尋（無 Laya）</td><td class="n">0.032 (0.04)</td><td class="n">—</td><td class="n">0.048 (0.06)</td><td class="n">—</td><td class="n">0.027 (0.00)</td><td class="n">—</td></tr>
+<tr class="muted"><td>隨機 rollout 搜尋（無 Laya）</td><td class="n">0.233 (0.34)</td><td class="n">—</td><td class="n">0.094 (0.13)</td><td class="n">—</td><td class="n">0.278 (0.32)</td><td class="n">—</td></tr>
+<tr><td>原始 Laya（未微調）</td><td class="n">0.128 (0.19)</td><td class="n">0.061 (0.09)</td><td class="n">0.052 (0.07)</td><td class="n">0.031 (0.04)</td><td class="n">0.138 (0.15)</td><td class="n">0.003 (0.00)</td></tr>
+<tr><td>Warm start</td><td class="n">0.600 (0.77)</td><td class="n">0.501 (0.65)</td><td class="n">0.396 (0.54)</td><td class="n">0.303 (0.42)</td><td class="n">0.804 (1.00)</td><td class="n">0.804 (1.00)</td></tr>
+<tr class="focus"><td>Self-play（control）</td><td class="n">0.736 (0.94)</td><td class="n">0.590 (0.76)</td><td class="n">0.640 (0.89)</td><td class="n">0.428 (0.61)</td><td class="n">0.804 (1.00)</td><td class="n">0.804 (1.00)</td></tr>
+<tr class="muted"><td>T-teacher-only</td><td class="n">0.613 (0.79)</td><td class="n">0.579 (0.74)</td><td class="n">0.413 (0.59)</td><td class="n">0.371 (0.53)</td><td class="n">0.804 (1.00)</td><td class="n">0.804 (1.00)</td></tr>
+</tbody></table></div>
+<p class="cap">Reward（括號為成功率），100 局測試。Warm start 為該關卡全部實驗平均（L2-goal 9、L3-goal 12、C1 12 個）。</p>
+<div class="chart" id="c-stage"></div>
+
+<h4>訓練前後的解法效率</h4>
+<div class="tbl"><table>
+<thead><tr><th>方法</th><th class="n">L1（3 步）</th><th class="n">L2（5 步）</th><th class="n">L2-goal（5 步）</th><th class="n">L3-goal（8 步）</th></tr></thead>
+<tbody>
+<tr class="muted"><td>均勻先驗搜尋</td><td class="n">4.7 (0.34)</td><td class="n">4.5 (0.04)</td><td class="n">4.5 (0.04)</td><td class="n">5.2 (0.06)</td></tr>
+<tr class="muted"><td>隨機 rollout 搜尋</td><td class="n">4.6 (0.69)</td><td class="n">7.6 (0.21)</td><td class="n">9.9 (0.34)</td><td class="n">10.2 (0.13)</td></tr>
+<tr><td>原始 Laya greedy</td><td class="n">4.5 (0.31)</td><td class="n">9.0 (0.06)</td><td class="n">10.4 (0.09)</td><td class="n">7.0 (0.04)</td></tr>
+<tr><td>原始 Laya PUCT16</td><td class="n">6.8 (0.59)</td><td class="n">12.1 (0.18)</td><td class="n">11.9 (0.19)</td><td class="n">11.7 (0.07)</td></tr>
+<tr><td>Warm start PUCT16</td><td class="n">3.1 (0.99)</td><td class="n">5.2–5.3 (0.98)</td><td class="n">6.1 (0.77)</td><td class="n">8.6 (0.54)</td></tr>
+<tr class="focus"><td>Self-play PUCT16（control）</td><td class="n">3.1 (0.98)</td><td class="n">5.2 (0.99)</td><td class="n">5.6 (0.94)</td><td class="n">8.6 (0.89)</td></tr>
+</tbody></table></div>
+<p class="cap">成功局平均步數（括號為成功率）。C1 因可提早失敗，舊紀錄無法換算，故未列。</p>
+<ul>
+  <li>原始 Laya 所有關卡 greedy 成功率皆低於 10%；加上搜尋後於 L2-goal（0.128）優於均勻先驗（0.032）但低於隨機 rollout（0.233），於 L3-goal 與無模型相當。解出的局步數為任務的兩倍以上（L2 12.1 步、L3-goal 11.7 步）。</li>
+  <li>均勻先驗搜尋的成功局步數偏短係選擇效應：僅解出 4% 特別短的遊戲，成功率極低時此欄不具可比性。</li>
+  <li>Teacher 微調為最大躍升：greedy 於 L2-goal 0.06 → 0.50、L3-goal 0.03 → 0.30，成功局步數同時降至接近任務步數。</li>
+  <li>Self-play 主要提升搜尋後成績：L3-goal PUCT16 +0.24（成功率 0.54 → 0.89），greedy +0.13（0.42 → 0.61）。</li>
+</ul>
+
+<h3 id="e6"><span class="n">4.6</span>L1、L2 完整規模</h3>
+<p>以第二輪相同的評估設計（100 局測試、40 局驗證、gate）執行 T-teacher-only 與 control，各 3 個 seed。理論最佳：L1 0.5 + 0.5·0.9<sup>3</sup> ≈ 0.864；L2 ≈ 0.795。</p>
+<div class="tbl"><table>
+<thead><tr><th>方法</th><th class="n">L1 PUCT16</th><th class="n">L1 greedy</th><th class="n">L2 PUCT16</th><th class="n">L2 greedy</th></tr></thead>
+<tbody>
+<tr class="muted"><td>均勻先驗搜尋</td><td class="n">0.276 (0.34)</td><td class="n">—</td><td class="n">0.032 (0.04)</td><td class="n">—</td></tr>
+<tr class="muted"><td>隨機 rollout 搜尋</td><td class="n">0.564 (0.69)</td><td class="n">—</td><td class="n">0.156 (0.21)</td><td class="n">—</td></tr>
+<tr><td>原始 Laya</td><td class="n">0.447 (0.59)</td><td class="n">0.253 (0.31)</td><td class="n">0.117 (0.18)</td><td class="n">0.042 (0.06)</td></tr>
+<tr><td>Warm start（6 個實驗平均）</td><td class="n">0.859 (0.99)</td><td class="n">0.837 (0.97)</td><td class="n">0.772 (0.98)</td><td class="n">0.733 (0.93)</td></tr>
+<tr class="focus"><td>Self-play（control）</td><td class="n">0.848 ± 0.014 (0.98)</td><td class="n">0.829 (0.96)</td><td class="n">0.780 ± 0.004 (0.99)</td><td class="n">0.766 (0.97)</td></tr>
+<tr class="muted"><td>T-teacher-only</td><td class="n">0.857 ± 0.006 (0.99)</td><td class="n">0.837 (0.97)</td><td class="n">0.776 ± 0.002 (0.98)</td><td class="n">0.753 (0.95)</td></tr>
+<tr><td>control − teacher-only（成對）</td><td class="n">−0.009 ± 0.008</td><td class="n"></td><td class="n">+0.004 ± 0.006</td><td class="n"></td></tr>
+</tbody></table></div>
+<div class="tbl"><table>
+<thead><tr><th>關卡</th><th>變體</th><th class="n">reward</th><th class="n">成功率</th><th class="n">平均步數</th><th class="n">成功局步數</th><th class="n">任務步數</th><th>gate 接受</th></tr></thead>
+<tbody>
+<tr class="muted"><td>L1</td><td>T-teacher-only</td><td class="n">0.857 ± 0.006</td><td class="n">0.99 ± 0.01</td><td class="n">3.1 ± 0.1</td><td class="n">3.1 ± 0.0</td><td class="n">3</td><td>8/8、8/8、7/8</td></tr>
+<tr><td>L1</td><td>control</td><td class="n">0.848 ± 0.014</td><td class="n">0.98 ± 0.02</td><td class="n">3.2 ± 0.2</td><td class="n">3.1 ± 0.1</td><td class="n">3</td><td>8/8、8/8、8/8</td></tr>
+<tr class="muted"><td>L2</td><td>T-teacher-only</td><td class="n">0.776 ± 0.002</td><td class="n">0.98 ± 0.01</td><td class="n">5.5 ± 0.1</td><td class="n">5.3 ± 0.1</td><td class="n">5</td><td>8/8、7/8、8/8</td></tr>
+<tr><td>L2</td><td>control</td><td class="n">0.780 ± 0.004</td><td class="n">0.99 ± 0.01</td><td class="n">5.4 ± 0.0</td><td class="n">5.2 ± 0.0</td><td class="n">5</td><td>8/8、6/8、6/8</td></tr>
+</tbody></table></div>
+<ul>
+  <li>Warm start 後已近最優（L1 0.859 / 0.864；L2 0.772 / 0.795），剩餘空間 0.005 與 0.02，小於評估雜訊。</li>
+  <li>Self-play 與 teacher-only 在 reward、成功率與步數上均無差異。L1 與最佳的差距幾乎全來自 1–2% 未解出的局；L2 則由未解出的局與成功局多走的 0.2–0.3 步各占一部分。</li>
+  <li>L1 control 有兩個 seed 最終略低（0.840、0.839，warm start 0.863、0.862），但驗證集成績維持於 0.860–0.864，落於 gate 容許範圍內；測試集約 0.02 的下降屬雜訊等級。</li>
+  <li>搜尋增益僅 0.01–0.02（成功率 +0.01–0.03），因 greedy 成功率已達 0.95–0.97。</li>
+</ul>
+<h4>跨關卡比較</h4>
+<div class="tbl"><table>
+<thead><tr><th>關卡</th><th>目標描述</th><th class="n">warm start 後距最佳</th><th class="n">self-play 相對 teacher-only</th></tr></thead>
+<tbody>
+<tr><td>L1</td><td>逐步指示</td><td class="n">約 0.005</td><td class="n">−0.009</td></tr>
+<tr><td>L2</td><td>逐步指示</td><td class="n">約 0.02</td><td class="n">+0.004</td></tr>
+<tr><td>C1</td><td>讀食譜照做</td><td class="n">0</td><td class="n">0.000</td></tr>
+<tr class="focus"><td>L2-goal</td><td>僅最終目標</td><td class="n">約 0.14</td><td class="n">+0.12</td></tr>
+<tr class="focus"><td>L3-goal</td><td>僅最終目標</td><td class="n">約 0.30</td><td class="n">+0.22</td></tr>
+</tbody></table></div>
+<div class="chart" id="c-cross"></div>
+<p>Self-play 的增益與「模仿 teacher 後的剩餘空間」一致：僅需自行探索的關卡在模仿後仍留有空間。</p>
+
+<h3 id="e7"><span class="n">4.7</span>推論速度：greedy 與 PUCT</h3>
+<p>量測部署情境（單一 agent、逐局執行、不使用平行 actor）下每步延遲。設定：L2-goal 第二輪 control seed 0 最終權重，GPU（<code>cuda:0</code>），30 局測試遊戲，各方法先以 2 局暖機不計時；各方法使用全新環境，每局開始前清空評估快取；PUCT 批次 4、無 Dirichlet 雜訊。</p>
+<div class="tbl wide"><table>
+<thead><tr><th>方法</th><th class="n">成功率</th><th class="n">reward</th><th class="n">平均步數</th><th class="n">成功局步數</th><th class="n">每局秒數</th><th class="n">每步 ms（平均 / p50 / p95）</th><th class="n">相對 greedy</th><th class="n">每步模型呼叫</th><th class="n">每步評估列數</th><th class="n">模型 / 環境</th></tr></thead>
+<tbody>
+<tr><td>greedy</td><td class="n">0.70</td><td class="n">0.547</td><td class="n">9.9</td><td class="n">5.6</td><td class="n">0.20</td><td class="n">13 / 13 / 16</td><td class="n">1.0×</td><td class="n">1.0</td><td class="n">2.0</td><td class="n">66% / 34%</td></tr>
+<tr class="focus"><td>PUCT16</td><td class="n">0.97</td><td class="n">0.745</td><td class="n">6.6</td><td class="n">6.1</td><td class="n">1.35</td><td class="n">206 / 158 / 505</td><td class="n">15.6×</td><td class="n">3.9</td><td class="n">12.1</td><td class="n">21% / 78%</td></tr>
+<tr><td>PUCT64</td><td class="n">1.00</td><td class="n">0.790</td><td class="n">5.2</td><td class="n">5.2</td><td class="n">1.30</td><td class="n">250 / 103 / 1086</td><td class="n">19.0×</td><td class="n">6.5</td><td class="n">17.8</td><td class="n">24% / 75%</td></tr>
+</tbody></table></div>
+<p class="cap">每個局面評估兩列（policy、value），故 greedy 每步 2 列。剩餘時間為搜尋簿記。</p>
+<div class="chart" id="c-speed"></div>
+<ul>
+  <li>搜尋每步約 0.2 秒，為 greedy 的 15–19 倍，成功率由 0.70 提升至 0.97–1.00。Greedy 解出的局效率良好（5.6 步），問題在 30% 的局未解出。</li>
+  <li>模擬 ×4 每步僅 +20%（206 → 250 ms），每局時間反而略減（1.35 → 1.30 秒）。原因：評估快取於局內保留，前一步搜尋過的局面可直接重用（PUCT64 每步僅新評估約 9 個局面）；模擬抵達已完成任務的終局時無需呼叫模型，每步模型呼叫 6.5 次而非 17 次。</li>
+  <li>延遲集中於少數步驟：PUCT64 中位數 103 ms 低於 PUCT16 的 158 ms，但 p95 達 1.1 秒。</li>
+  <li>搜尋時 75–78% 的時間耗於 TextWorld 重播，Laya 僅占 21–24%；加速應優先改善環境。</li>
+  <li>PUCT64 reward 0.790 近 L2-goal 理論最佳 0.795，較 PUCT16 高 0.045；此為單一 seed、30 局（雜訊約 ±0.04），尚需於 100 局測試集與 L3-goal 確認。</li>
+</ul>
+</section>
+
+<section id="concl">
+<h2><span class="n">5</span>結論</h2>
+<ol>
+  <li><b>Laya + MCTS 的 AlphaZero 式迴圈於文字任務有效。</b>在需探索的 TextWorld 關卡上，self-play 帶來明確且可重現的增益，難度越高增益越大；在模仿 teacher 即達最優的關卡（L1、L2、C1）上無差異。</li>
+  <li><b>增益主要來自價值網路。</b>Teacher 示範僅能提供最佳路線，無法提供局面優劣的訊號；self-play 補足此訊號，使搜尋發揮作用，與 AlphaZero「搜尋品質取決於價值估計」的設計一致。</li>
+  <li><b>簡單設定即足夠。</b>目前無進階變體優於「成功局搜尋分佈 + 銳化 + gate」。</li>
+  <li><b>搜尋成本可接受。</b>L2-goal 上每步約 0.2 秒；模擬 ×4 每步僅 +20%，時間主要耗於環境。</li>
+  <li><b>限制。</b>Self-play 於 1–2 輪後飽和；除 L3-goal 外各關卡已無比較空間；gate 驗證集僅 40 局，雜訊偏大。</li>
+</ol>
+</section>
+
+<section id="issues">
+<h2><span class="n">6</span>工程問題與解法</h2>
+<div class="tbl"><table>
+<thead><tr><th>問題</th><th>症狀</th><th>原因</th><th>解法</th></tr></thead>
+<tbody>
+<tr><td>Reward 使晚解出趨近 0</td><td>價值網路傾向拖延</td><td>0.9<sup>n</sup> 於步數多時趨近 0</td><td>成功下限 0.5（<code>success_floor</code>）</td></tr>
+<tr><td>Self-play 使模型退步</td><td>L2-goal 成功率 0.95 → 0.65</td><td>模仿繞遠路的成功局；16 次模擬目標過平</td><td>Gate；policy 目標銳化 0.25</td></tr>
+<tr><td>GPU 閒置</td><td>使用率 0–1%</td><td>單局循序，CPU 端 TextWorld 重播為瓶頸</td><td>平行 actor、引擎池與觀察快取</td></tr>
+<tr><td>評估偏高</td><td>報告分數可能來自被還原的權重</td><td>gate 與報告共用測試題</td><td>驗證集 / 測試集分離</td></tr>
+<tr><td>增益無法歸因</td><td>「相對 warm start 進步」</td><td>teacher 資料每輪重新訓練</td><td>新增 T-teacher-only 對照組</td></tr>
+<tr><td>重啟實驗資料混雜</td><td>gate 欄位分母異常</td><td><code>metrics.jsonl</code> 以附加模式寫入</td><td>新實驗先更名舊檔；彙整僅取最後一次</td></tr>
+<tr><td>TextWorld 無限迴圈</td><td>單一 actor 記憶體達 300 GB、實驗停滯數小時</td><td>任務重新規劃時，移除步驟後又推回其反向步驟</td><td>規劃超過 100 步即放棄該任務後續路線提示（不影響勝負、分數與合法指令）；actor 記憶體與時間上限</td></tr>
+<tr><td>遊戲名稱被誤刪</td><td>約 3% 目標文字缺字</td><td>清理問候語的規則誤刪含 TextWorld 字樣的物件名</td><td>改用句型比對</td></tr>
+<tr><td>套件檔案未上傳</td><td><code>No module named 'mcts_laya.models'</code></td><td><code>.gitignore</code> 的 <code>models/</code> 排除了套件目錄</td><td>改為僅排除根目錄 <code>/models/</code></td></tr>
+</tbody></table></div>
+</section>
+
+<section id="next">
+<h2><span class="n">7</span>後續工作</h2>
+<ol>
+  <li><b>評估時增加模擬次數</b>：以 16 / 32 / 64 / 128 次模擬評估已訓練模型，檢驗搜尋可擴展性，並判斷 L3-goal 的飽和源於網路或搜尋預算。§4.7 已有初步跡象（L2-goal PUCT64 較 PUCT16 高 0.045，每步僅 +20%）。下一步於 L3-goal、100 局測試集、3 個 seed 確認，並比較 T-teacher-only 與 control：若僅 control 隨搜尋增加而提升，可更直接證明 self-play 改善的是價值網路。</li>
+  <li><b>確認機制</b>：於 L3-goal 執行 B-value-only；若其與 control 相當，即確認 self-play 的貢獻來自價值網路。</li>
+  <li><b>更難的任務</b>：C2（多食材、多房間料理），或 ALFWorld（環境、teacher 與設定已完成，待 GPU 實驗）。</li>
+  <li><b>延續 self-play 的增益</b>：擴大驗證集以降低 gate 雜訊、增加每輪局數、逐步降低 teacher 資料比重。</li>
+</ol>
+</section>
+
+<section id="appx">
+<h2>附錄</h2>
+<h3>A. 重現指令</h3>
+<pre># 環境
+scripts/setup_env.sh --download
+.venv/bin/pip install -e ".[dev,textworld]"
+.venv/bin/python -m pytest
+
+# 產生 TextWorld 遊戲池
+.venv/bin/mcts-laya tw-games --level L2-goal L3-goal C1 --train 150 --eval 100 --val 40 --out data/textworld
+
+# 第二輪消融與彙整
+.venv/bin/python scripts/run_ablation.py configs/ablation/selfplay_textworld.yaml --only L2-goal L3-goal \
+    --variants T-teacher-only control --seeds 0 1 2 --jobs 2
+.venv/bin/python scripts/summarize_ablation.py runs/ablation/selfplay_textworld_v2 --reference T-teacher-only
+
+# L1、L2 完整規模
+.venv/bin/mcts-laya tw-games --level L1 L2 --train 150 --eval 100 --val 40 --out data/textworld
+.venv/bin/python scripts/run_ablation.py configs/ablation/phase1a_full.yaml --jobs 2
+
+# 推論速度
+.venv/bin/python scripts/bench_inference.py --run runs/ablation/selfplay_textworld_v2/L2-goal/control-s0 \
+    --problems 30 --sims 16 64 --out docs/results/bench/l2-goal_control-s0.md</pre>
+<h3>B. 名詞</h3>
+<div class="tbl"><table>
+<thead><tr><th>名詞</th><th>定義</th></tr></thead>
+<tbody>
+<tr><td>policy / prior</td><td>網路對各合法動作的機率</td></tr>
+<tr><td>value</td><td>網路對局面結果的估計（−1 至 1）</td></tr>
+<tr><td>PUCT</td><td>AlphaZero 使用的 MCTS 選擇規則</td></tr>
+<tr><td>模擬</td><td>自根節點至葉節點並回傳價值的一次搜尋</td></tr>
+<tr><td>greedy</td><td>不搜尋，直接取最高機率動作</td></tr>
+<tr><td>warm start</td><td>以 teacher 示範資料進行的初始訓練</td></tr>
+<tr><td>gate</td><td>每輪訓練後以驗證集評分，退步逾容許值即還原</td></tr>
+<tr><td>成對差距</td><td>同 seed 兩變體之差，跨 seed 平均</td></tr>
+<tr><td>actor</td><td>平行對局架構中負責環境與搜尋的程序</td></tr>
+</tbody></table></div>
+</section>
+
+<footer>來源：<code>docs/project_report.md</code>（2026-10-08）。除另註明外，數值為 100 局測試集、3 個 seed 之結果。</footer>
+</main>
+</div>
+
+<script>
+function barChart(id, cfg) {
+  const el = document.getElementById(id);
+  const W = 640, H = cfg.h || 270, padL = 8, padR = 8, padT = 24, padB = 32;
+  const min = Math.min(0, cfg.min ?? 0), max = cfg.max;
+  const y = v => padT + (max - v) / (max - min) * (H - padT - padB);
+  const gW = (W - padL - padR) / cfg.groups.length, n = cfg.series.length, gap = 3;
+  const bw = Math.min(48, (gW * 0.8 - (n - 1) * gap) / n);
+  let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${cfg.title}">`;
+  cfg.groups.forEach((g, gi) => {
+    const total = n * bw + (n - 1) * gap, x0 = padL + gi * gW + (gW - total) / 2;
+    cfg.series.forEach((se, si) => {
+      const v = se.values[gi];
+      if (v == null) return;
+      const x = x0 + si * (bw + gap), y1 = y(Math.max(v, 0)), y2 = y(Math.min(v, 0));
+      s += `<rect x="${x}" y="${y1}" width="${bw}" height="${Math.max(y2 - y1, 1)}" rx="2" fill="var(${se.color})"><title>${g}・${se.name}：${cfg.fmt(v)}</title></rect>`;
+      s += `<text class="val" x="${x + bw / 2}" y="${v >= 0 ? y1 - 6 : y2 + 14}">${cfg.fmt(v)}</text>`;
+    });
+    s += `<text class="cat" x="${padL + gi * gW + gW / 2}" y="${H - 9}">${g}</text>`;
+  });
+  s += `<line class="axis" x1="${padL}" x2="${W - padR}" y1="${y(0)}" y2="${y(0)}"/></svg>`;
+  const legend = cfg.series.length > 1 ? cfg.series.map(se => `<span><i style="background:var(${se.color})"></i>${se.name}</span>`).join("") : "";
+  el.innerHTML = `<div class="ttl">${cfg.title}</div>${cfg.sub ? `<div class="sub">${cfg.sub}</div>` : ""}<div class="legend">${legend}</div>${s}`;
+}
+const f3 = v => v.toFixed(3), sg = v => (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(v).toFixed(2);
+barChart("c-gain", {
+  title: "搜尋增益（PUCT16 − greedy reward）", sub: "最終保留的權重，3 個 seed 平均",
+  groups: ["L2-goal", "L3-goal"], max: 0.24, fmt: v => "+" + v.toFixed(2), h: 230,
+  series: [
+    { name: "T-teacher-only", color: "--ctx2", values: [0.034, 0.042] },
+    { name: "Self-play（control）", color: "--accent", values: [0.146, 0.212] },
+  ],
+});
+barChart("c-stage", {
+  title: "PUCT16 reward：各階段", sub: "100 局測試",
+  groups: ["L2-goal", "L3-goal"], max: 0.8, fmt: f3,
+  series: [
+    { name: "原始 Laya", color: "--ctx1", values: [0.128, 0.052] },
+    { name: "Warm start", color: "--ctx2", values: [0.600, 0.396] },
+    { name: "T-teacher-only", color: "--warm", values: [0.613, 0.413] },
+    { name: "Self-play（control）", color: "--accent", values: [0.736, 0.640] },
+  ],
+});
+barChart("c-cross", {
+  title: "剩餘空間與 self-play 增益", sub: "reward；剩餘空間為近似值",
+  groups: ["L1", "L2", "C1", "L2-goal", "L3-goal"], max: 0.33, min: -0.03, fmt: sg, h: 250,
+  series: [
+    { name: "warm start 後距最佳", color: "--ctx2", values: [0.005, 0.02, 0, 0.14, 0.30] },
+    { name: "self-play − teacher-only", color: "--accent", values: [-0.009, 0.004, 0, 0.123, 0.227] },
+  ],
+});
+barChart("c-speed", {
+  title: "每步延遲（ms，平均）", sub: "L2-goal，GPU，30 局",
+  groups: ["greedy", "PUCT16", "PUCT64"], max: 280, fmt: v => String(v), h: 220,
+  series: [{ name: "每步 ms", color: "--accent", values: [13, 206, 250] }],
+});
+</script>
+
+</body>
+</html>
