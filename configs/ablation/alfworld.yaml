@@ -1,0 +1,31 @@
+# Phase 1b / ALFWorld: does self-play help beyond the planner's warm start? (run on a GPU)
+# Same design as TextWorld round 2: control vs. T-teacher-only, paired by seed.
+#
+#   mcts-laya alfworld-data --out data/alfworld
+#   python scripts/run_ablation.py configs/ablation/alfworld.yaml --seeds 0              # first run: one seed
+#   python scripts/run_ablation.py configs/ablation/alfworld.yaml --jobs 2               # all seeds
+#   python scripts/summarize_ablation.py runs/ablation/alfworld --reference T-teacher-only
+#
+# Test: all 134 valid_unseen games (+ all 140 valid_seen on the warm start and the final weights);
+# gate: 60 games held out from train. Teacher data and the evaluation games are the same for both
+# variants of a seed.
+name: alfworld
+output_root: runs/ablation/alfworld
+seeds: [0, 1, 2]
+
+levels:
+  ALFWorld: configs/alfworld/base.yaml
+
+gpu_overrides:
+  - model.device=cuda
+  - evaluator.max_rows=32       # rows are ~2x TextWorld's (up to 1280 tokens)
+  - search.params.batch_size=8
+  - train.config.batch_size=8
+  - save_half=true
+
+variants:
+  control:                      # imitate successful self-play games (16 simulations)
+    - selfplay.policy_filter=success
+  T-teacher-only:               # no self-play data: every iteration retrains on the teacher data alone
+    - selfplay.add_to_replay=false
+    - selfplay.episodes_per_iteration=16

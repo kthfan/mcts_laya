@@ -94,10 +94,17 @@
 - [ ] L3-goal、C1：最好的變體 + control
 - [ ] 回傳 `ablation_results.tgz`，分析並決定下一步
 
-## Phase 1b（ALFWorld）預備
-- [ ] 多 episode 並行、跨 episode 合併葉節點批次（GPU 吞吐量）
+## Phase 1b（ALFWorld）：評估、計畫與實作見 [`docs/alfworld.md`](docs/alfworld.md)
+- [x] 多 episode 並行、跨 episode 合併葉節點批次（平行 actor，Phase 1a 已完成）
+- [x] 安裝（`.[alfworld]`）與資料：`mcts-laya alfworld-data`（只下載 36 MB 的 TextWorld-PDDL 遊戲；train 3493 / val 60 / valid_seen 140 / valid_unseen 134）
+- [x] `ALFWorldEnv`：引擎快照直接還原（約 20 ms，不重播）、文字產生器加速（52–125 → 約 15 ms／步，文字不變）、runner 重複使用（避免載入 fast-downward 函式庫副本耗盡記憶體）、只用觀察到的資訊組成的記憶
+- [x] `ALFWorldTeacher`：PDDL 規劃器；`teacher.workers` 平行產生 teacher 資料
+- [x] 評估：`eval.extra_splits`（valid_seen）、各任務類型的成功率（`by_category`）
+- [x] 測試（`tests/test_alfworld.py`，4 個小遊戲）
+- [ ] 使用者在 GPU 上跑 `configs/ablation/alfworld.yaml` seed 0（control、T-teacher-only），回報結果與時間
+- [ ] 視結果：只用觀察資訊的 teacher 或 DAgger；3 個 seed
+- [ ] 和 LLM agent（ReAct）比較成功率、成本、延遲（延後）
 - [ ] 搜尋樹重用；MuZero Reanalyse
-- [ ] ALFWorld 安裝與資料下載、PDDL expert teacher
 
 ## 已知觀察
 - 預訓練過的 Laya 學得遠比隨機初始化的模型快（代數 150 題 vs 1000 題；Countdown 0.83 vs 0.37）。

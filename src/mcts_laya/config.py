@@ -46,6 +46,9 @@ class TeacherConfig:
     problems: int = 300
     explore: float = 0.3
     epochs: int = 2
+    # processes generating the teacher data: 0 = in this process; "auto" = one per spare core
+    # (at most 32). Worth it only for slow teachers (ALFWorld's planner takes ~1 s per state).
+    workers: Any = 0
 
 
 @dataclass
@@ -95,6 +98,9 @@ class EvalSection:
     gate_problems: int = 0
     gate_split: str = "val"
     gate_seed: int = 54321
+    # further test splits (e.g. ALFWorld's valid_seen), measured with `searches` on the warm start
+    # and on the final kept weights; `problems` games each (all of a split if it has fewer)
+    extra_splits: List[str] = field(default_factory=list)
     searches: List[EvalSearch] = field(default_factory=list)
     baselines: List[EvalSearch] = field(default_factory=list)  # evaluated once, not per iteration
 

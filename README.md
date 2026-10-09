@@ -3,6 +3,7 @@
 用 [Laya](https://github.com/NandhaKishorM/laya)（Convai Innovations 的非自迴歸決策模型）當 policy / value 網路，搭配蒙地卡羅樹搜尋，做 AlphaZero / Expert Iteration 式的自我改進。
 
 - **專案總報告（架構、實驗、結果）**：[`docs/project_report.md`](docs/project_report.md)
+- **Phase 1b ALFWorld（評估、計畫、實作、執行方式）**：[`docs/alfworld.md`](docs/alfworld.md)
 - 研究與候選問題評估：[`candidate_problems.md`](candidate_problems.md)
 - 大目標：[`ROADMAP.md`](ROADMAP.md)
 - 目前進度：[`TODO.md`](TODO.md)

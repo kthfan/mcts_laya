@@ -23,6 +23,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=8"]
 textworld = ["textworld>=1.6"]
+alfworld = ["textworld[pddl]>=1.6", "alfworld==0.4.2"]  # Phase 1b (text-only ALFWorld)
 
 [project.scripts]
 mcts-laya = "mcts_laya.cli:main"

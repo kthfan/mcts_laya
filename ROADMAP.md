@@ -53,10 +53,12 @@
 
 **出口條件**：在 L2-goal 與 L3-goal 上，Laya+MCTS 勝過 Laya greedy 與同預算的均勻先驗 MCTS，且 self-play 讓成功率上升。
 
-### Phase 1b：ALFWorld（進階目標）　⬜
+### Phase 1b：ALFWorld（進階目標）　🟡
 
-- 沿用 1a 的 adapter，加上動作數 > 20 時的 shortlist / 「動詞 → 目標」兩層 choice
-- 用 ALFWorld 的 PDDL expert 冷啟動
+評估、決策與實作見 [`docs/alfworld.md`](docs/alfworld.md)。環境、teacher、設定與測試已完成，等 GPU 實驗。
+
+- ~~沿用 1a 的 adapter，加上動作數 > 20 時的 shortlist / 「動詞 → 目標」兩層 choice~~：實測每步平均 23–28、最多 63 個指令，全部放進 Laya 的 head（`head_max_len` 640）即可，不需要 shortlist
+- 用 ALFWorld 的 PDDL 規劃器冷啟動（已實作；內建的手寫 expert 只有 84% 成功、pick_two 21%，不採用）
 - 和 ReAct / Reflexion（LLM 當 policy）比較成功率、每任務成本、延遲，畫出 Pareto 前緣
 - 效能：多 episode 並行、跨 episode 合併葉節點批次、搜尋樹重用、MuZero Reanalyse、凍結 encoder / LoRA
 

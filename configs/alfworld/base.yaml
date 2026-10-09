@@ -1,0 +1,64 @@
+# Phase 1b / ALFWorld (text only, TextWorld engine): 6 household task types, all splits.
+# GPU recommended. Data first (36 MB download, ~350 MB unpacked):
+#   pip install -e '.[alfworld]'
+#   mcts-laya alfworld-data --out data/alfworld          # train 3493 / val 60 / valid_seen 140 / valid_unseen 134
+#   mcts-laya run configs/alfworld/base.yaml --set model.device=cuda
+#
+# Test split: valid_unseen (the usual headline number), plus valid_seen (eval.extra_splits) on the
+# warm start and on the final kept weights. The gate decides on 60 games held out from train.
+name: phase1b-alfworld-laya
+output_dir: runs/phase1b/alfworld-laya
+seed: 0
+iterations: 8
+save_checkpoints: last
+save_half: true
+
+env:
+  name: alfworld
+  params: {data_dir: data/alfworld, eval_set: valid_unseen, max_steps: 50, gamma: 0.95, success_floor: 0.5,
+           drop_commands: [look, inventory, examine, help], history_len: 4}
+
+model:
+  checkpoint: models/laya/multilingual
+  device: null
+  max_len: 1280         # head + state; measured on random play: mean ~500, p99 ~915, max ~1170 tokens
+  head_max_len: 640     # instruction + all commands: mean ~225, p99 ~475, max ~610 (63 commands)
+
+evaluator: {max_rows: 32, prior_temperature: 1.0}
+
+search:
+  name: puct
+  params: {num_simulations: 16, batch_size: 4, c_puct: 1.5, dirichlet_alpha: 0.3, dirichlet_fraction: 0.25}
+
+# The PDDL planner (knows where hidden objects are) labels each visited state; ~1 s per state, so
+# the trajectories are generated in parallel processes.
+teacher: {enabled: true, problems: 500, explore: 0.3, epochs: 2, workers: auto}
+
+selfplay:
+  episodes_per_iteration: 128
+  config: {max_moves: 50, add_noise: true, action_selection: search, value_target: outcome,
+           policy_target_temperature: 0.25, failed_policy_weight: 0.0}
+
+train:
+  replay_capacity: 50000
+  samples_per_iteration: null
+  teacher_mix: 1.0
+  config: {epochs: 1, batch_size: 4, lr_encoder: 3.0e-5, lr_head: 2.0e-4, rl_weight: 0.0,
+           freeze_encoder: false, freeze_embeddings: true, gradient_checkpointing: true,
+           augment_option_order: true}
+
+eval:
+  problems: 1000        # more than any split: every game of valid_unseen (134) / valid_seen (140)
+  seed: 12345
+  gate_problems: 60     # the held-out training games (split "val")
+  gate_split: val
+  extra_splits: [valid_seen]
+  max_moves: 50
+  searches:
+    - {label: greedy, name: greedy}
+    - {label: puct16, name: puct, params: {num_simulations: 16, batch_size: 4}}
+  baselines:
+    - {label: uniform-puct16, name: puct, evaluator: uniform, params: {num_simulations: 16, batch_size: 4}}
+
+gate: {enabled: true, metric: puct16.reward, tolerance: 0.02}
+milestone: {search_label: puct16, greedy_label: greedy, baseline_label: uniform-puct16, metric: reward}

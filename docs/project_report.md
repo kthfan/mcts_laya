@@ -581,7 +581,7 @@ self-play 的幫助大小和「模仿 teacher 之後還剩多少空間」一致�
 
 1. **測試「評估時多搜尋」的效果**：用已訓練好的模型，以 16 / 32 / 64 / 128 次模擬評估。如果 self-play 訓練出的價值網路讓「搜尋越多、成績越好」，就是 AlphaZero 式「搜尋可以擴展」的核心證據，也能判斷 L3 的飽和是網路的限制還是搜尋預算的限制。§4.7 的速度測試已經有初步跡象：L2-goal 上 PUCT64 比 PUCT16 高 0.045，幾乎達到理論最佳，而每步只多 20% 時間。下一步是在 L3-goal、100 局測試集、3 個 seed 上確認，並比較 T-teacher-only 和 control（如果只有 control 的成績隨搜尋增加，就更直接地證明 self-play 改善的是價值網路）。`bench_inference.py --sims 16 32 64 128` 可以同時量到成績與時間。
 2. **確認機制**：在 L3 上跑 B-value-only（self-play 只訓練 value）。如果它和 control 一樣好，就確定 self-play 的貢獻來自價值網路。
-3. **更難的任務**：C2（多食材、多房間的料理遊戲），或開始 Phase 1b 的 ALFWorld。
+3. **更難的任務**：C2（多食材、多房間的料理遊戲），或 Phase 1b 的 ALFWorld（環境、teacher 與設定已完成，等 GPU 實驗；評估與計畫見 [`docs/alfworld.md`](alfworld.md)）。
 4. **讓 self-play 持續進步**：較大的驗證集（降低 gate 的雜訊）、每輪更多局、逐步降低 teacher 資料的比重。
 
 ---
