@@ -1,0 +1,477 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+</head>
+<body>
+<title>Laya + MCTS 對 MCTS</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=LXGW+WenKai+TC:wght@400;700&family=Noto+Sans+TC:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one reading column; every section leads with a chart, table or diagram, text kept to short bullets.
+   Blue = Laya + MCTS, orange = MCTS (same pairing as the search visualization). */
+:root {
+  --bg: #f9f9f7;
+  --surface: #f1f0ec;
+  --fg: #141413;
+  --muted: #5a5954;
+  --line: #e1e0d9;
+  --laya: #2a78d6;
+  --laya-ink: #1d5fae;
+  --laya-soft: #a9c8ef;
+  --mcts: #eb6834;
+  --mcts-ink: #b4461a;
+  --ctx: #b9b8b0;
+  --good: #006300;
+  --font-display: "LXGW WenKai TC", "Noto Serif TC", "PingFang TC", serif;
+  --font-body: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #121211; --surface: #1d1d1b; --fg: #f2f1ec; --muted: #aeada5; --line: #2e2e2b;
+    --laya: #3987e5; --laya-ink: #7fb2f2; --laya-soft: #2d4f7a; --mcts: #d95926; --mcts-ink: #f0905f;
+    --ctx: #55544f; --good: #3fbf3f; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #121211; --surface: #1d1d1b; --fg: #f2f1ec; --muted: #aeada5; --line: #2e2e2b;
+  --laya: #3987e5; --laya-ink: #7fb2f2; --laya-soft: #2d4f7a; --mcts: #d95926; --mcts-ink: #f0905f;
+  --ctx: #55544f; --good: #3fbf3f; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 17px; line-height: 1.8; }
+.wrap { max-width: 48rem; margin: 0 auto; padding-inline: 20px; padding-block: 52px 88px; }
+h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; line-height: 1.35; font-weight: 700; }
+h1 { font-size: clamp(2rem, 6vw, 2.8rem); margin: 0 0 .35em; }
+h2 { font-size: 1.6rem; margin: 2.4em 0 .5em; }
+h3 { font-size: 1.15rem; margin: 1.4em 0 .4em; }
+p { margin: 0 0 .9em; }
+ul { margin: .4em 0 1em; padding-left: 1.3em; }
+li { margin: .25em 0; }
+li::marker { color: var(--muted); }
+.kicker { font-size: .82rem; letter-spacing: .12em; color: var(--muted); font-weight: 700; margin-bottom: .5em; }
+.lede { font-size: 1.12rem; color: var(--muted); }
+.L { color: var(--laya-ink); font-weight: 700; }
+.M { color: var(--mcts-ink); font-weight: 700; }
+.dot { display: inline-block; width: .7em; height: .7em; border-radius: 3px; margin-right: .35em; vertical-align: -.02em; }
+.dot.l { background: var(--laya); } .dot.m { background: var(--mcts); }
+.small { font-size: .88rem; color: var(--muted); }
+
+/* headline tiles */
+.tiles { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); margin: 1.6em 0 .6em; }
+.tile { background: var(--surface); border-radius: 12px; padding: 14px 18px; min-width: 0; }
+.tile .lbl { font-size: .86rem; color: var(--muted); }
+.tile .ft { display: flex; align-items: baseline; gap: .4em; flex-wrap: wrap; font-family: var(--font-display); font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.25; margin-top: .15em; }
+.tile .ft .from { font-size: 1.35rem; color: var(--mcts-ink); }
+.tile .ft .arr { color: var(--muted); font-size: 1.1rem; }
+.tile .ft .to { font-size: 2rem; color: var(--laya-ink); }
+.tile .hint { font-size: .82rem; color: var(--muted); }
+
+/* setup: two side-by-side cards */
+.vs { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); margin: 1em 0; }
+.vs > div { border: 1px solid var(--line); border-radius: 12px; padding: 14px 18px; min-width: 0; }
+.vs .name { font-family: var(--font-display); font-size: 1.2rem; font-weight: 700; }
+.vs .m .name { color: var(--mcts-ink); } .vs .l .name { color: var(--laya-ink); }
+.vs .m { border-top: 4px solid var(--mcts); } .vs .l { border-top: 4px solid var(--laya); }
+.vs dl { margin: .4em 0 0; display: grid; gap: 6px; }
+.vs dt { font-size: .8rem; color: var(--muted); letter-spacing: .04em; }
+.vs dd { margin: 0 0 4px; }
+
+/* flow diagrams */
+.flow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 4px; margin: .5em 0 1.1em; }
+.flow .b { border-radius: 8px; padding: 4px 10px; font-size: .92rem; background: var(--surface); }
+.flow .x { color: var(--muted); font-size: .9rem; }
+.flow.m .b.end { background: color-mix(in srgb, var(--mcts) 18%, var(--bg)); color: var(--mcts-ink); font-weight: 700; }
+.flow.l .b.end { background: color-mix(in srgb, var(--laya) 16%, var(--bg)); color: var(--laya-ink); font-weight: 700; }
+.flowlbl { font-size: .85rem; font-weight: 700; margin-top: .6em; }
+
+/* game screen */
+.screen { font-family: var(--font-mono); font-size: .84rem; line-height: 1.65; background: var(--surface); border-radius: 10px; padding: 12px 14px; overflow-x: auto; white-space: pre-wrap; }
+.screen .g { color: var(--laya-ink); font-weight: 500; }
+
+/* tables */
+.tbl { overflow-x: auto; margin: 1em 0; }
+table { border-collapse: collapse; width: 100%; font-size: .95rem; font-variant-numeric: tabular-nums; }
+th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+th { color: var(--muted); font-weight: 500; font-size: .84rem; border-bottom-color: var(--fg); white-space: nowrap; }
+td.num, th.num { text-align: right; white-space: nowrap; }
+td.lvl { font-weight: 700; white-space: nowrap; }
+tr.l td.num { color: var(--laya-ink); font-weight: 700; }
+tr.grp td { border-bottom: none; padding-top: 14px; }
+.ok { color: var(--good); font-weight: 700; } .no { color: var(--muted); }
+
+/* visit table (inline bars) */
+.visits td { padding: 6px 8px; }
+.visits .act { min-width: 6.5em; }
+.visits .act small { color: var(--muted); font-family: var(--font-mono); font-size: .76rem; display: block; line-height: 1.3; }
+.visits tr.hit td.act { font-weight: 700; }
+.bar { display: flex; align-items: center; gap: 6px; }
+.bar i { display: block; height: 12px; border-radius: 3px; flex: none; }
+.bar.m i { background: var(--mcts); } .bar.l i { background: var(--laya); }
+.bar span { font-size: .82rem; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.bar span b { color: var(--fg); }
+
+/* maps */
+.maps { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr)); margin: 1em 0; }
+.maps figure { margin: 0; border: 1px solid var(--line); border-radius: 12px; padding: 12px 12px 6px; min-width: 0; }
+.maps figcaption { font-weight: 700; font-size: .98rem; }
+.maps figcaption small { display: block; font-weight: 400; color: var(--muted); font-size: .84rem; }
+.maps svg { width: 100%; height: auto; display: block; }
+.maps text { font-family: var(--font-body); font-size: 13px; fill: var(--fg); }
+.maps text.tag { font-size: 11px; fill: var(--muted); }
+.maps text.cnt { font-size: 12px; font-weight: 700; }
+ol.moves { margin: .4em 0 1em; padding-left: 1.6em; }
+ol.moves li::marker { color: var(--laya-ink); font-weight: 700; }
+
+/* charts */
+.chart { margin: 1.2em 0 1.6em; }
+.chart .ttl { font-weight: 700; font-size: 1rem; }
+.chart .sub { font-size: .85rem; color: var(--muted); }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: .85rem; color: var(--muted); margin: .45em 0 .2em; }
+.legend i { display: inline-block; width: 11px; height: 11px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+.chart svg { width: 100%; height: auto; display: block; }
+.chart text { font-family: var(--font-body); font-size: 15px; fill: var(--muted); }
+.chart text.val { fill: var(--fg); font-weight: 700; text-anchor: middle; font-size: 17px; }
+.chart text.cat { text-anchor: middle; font-size: 17px; fill: var(--fg); }
+.chart .axis { stroke: var(--line); stroke-width: 1; }
+.chart .ref { stroke: var(--muted); stroke-width: 1.5; stroke-dasharray: 4 3; }
+
+.callout { background: var(--surface); border-radius: 12px; padding: 12px 16px; margin: 1em 0; }
+.callout p:last-child, .callout ul:last-child { margin-bottom: 0; }
+.callout .tag { font-size: .8rem; font-weight: 700; letter-spacing: .08em; color: var(--muted); }
+
+dl.gloss { display: grid; grid-template-columns: minmax(7rem, max-content) 1fr; gap: 8px 18px; margin: 1em 0; }
+dl.gloss dt { font-weight: 700; }
+dl.gloss dt small { display: block; font-weight: 400; color: var(--muted); font-size: .8rem; }
+dl.gloss dd { margin: 0; color: var(--muted); }
+@media (max-width: 520px) { dl.gloss { grid-template-columns: 1fr; gap: 2px; } dl.gloss dd { margin-bottom: 10px; } body { font-size: 16px; } }
+footer { margin-top: 3.5em; font-size: .85rem; color: var(--muted); border-top: 1px solid var(--line); padding-top: 1em; }
+a { color: var(--laya-ink); }
+:focus-visible { outline: 2px solid var(--laya); outline-offset: 2px; }
+</style>
+
+<div class="wrap">
+<header>
+  <div class="kicker">白話版 · TextWorld 文字冒險遊戲</div>
+  <h1>加上 Laya，搜尋才有方向</h1>
+  <p class="lede">兩邊用同一套搜尋方法，每走一步都先想 16 次。差別只在一件事：<span class="M">MCTS</span> 靠隨機亂走來判斷好壞，<span class="L">Laya + MCTS</span> 讓 Laya 讀懂畫面再判斷。</p>
+  <div class="tiles" aria-label="最難關卡 L3-goal 的結果">
+    <div class="tile"><div class="lbl">成功率（L3-goal）</div><div class="ft"><span class="from">13%</span><span class="arr">→</span><span class="to">89%</span></div><div class="hint">100 場沒看過的遊戲</div></div>
+    <div class="tile"><div class="lbl">每場平均步數（L3-goal）</div><div class="ft"><span class="from">27.4</span><span class="arr">→</span><span class="to">11.0</span></div><div class="hint">上限 30 步；失敗的場次算 30 步</div></div>
+    <div class="tile"><div class="lbl">成功的場次平均步數（L3-goal）</div><div class="ft"><span class="from">10.2</span><span class="arr">→</span><span class="to">8.6</span></div><div class="hint">任務最少要 8 步</div></div>
+  </div>
+  <p class="small"><span class="dot m"></span>MCTS　<span class="dot l"></span>Laya + MCTS</p>
+</header>
+
+<section>
+  <h2>比的是什麼</h2>
+  <div class="vs">
+    <div class="m">
+      <div class="name">MCTS</div>
+      <dl>
+        <dt>先試哪一步</dt><dd>每個動作機會均等</dd>
+        <dt>這一步好不好</dt><dd>從這裡開始隨機亂走到遊戲結束，看成功還是失敗</dd>
+        <dt>需要訓練嗎</dt><dd>不用</dd>
+      </dl>
+    </div>
+    <div class="l">
+      <div class="name">Laya + MCTS</div>
+      <dl>
+        <dt>先試哪一步</dt><dd>Laya 讀目標和畫面，給每個動作一個機率，機率高的先試</dd>
+        <dt>這一步好不好</dt><dd>Laya 直接估計「照這樣下去會不會成功」</dd>
+        <dt>需要訓練嗎</dt><dd>要，先在這種遊戲上訓練過</dd>
+      </dl>
+    </div>
+  </div>
+  <ul>
+    <li>兩邊都是 MCTS（蒙地卡羅樹搜尋），每一步都做 <b>16 次模擬</b>（在腦中往前試走 16 次），再選最好的一步。</li>
+    <li>唯一的差別是有沒有 Laya。</li>
+  </ul>
+</section>
+
+<section>
+  <h2>遊戲長什麼樣子</h2>
+  <p>玩家只看得到文字，要自己輸入指令（例如 <code>go east</code>、<code>take book</code>）。以下是一場測試遊戲的開頭：</p>
+  <div class="screen"><span class="g">Goal: Your objective is to place the book on the shelf inside the closet.</span>
+You are carrying: a fondue, a hat, a laptop and a fly larva.
+Location: Dish-Pit. … There is an exit to the east. … There is an unguarded exit to the south.
+Steps left: 30.</div>
+  <ul>
+    <li>只告訴你最終目標，<b>沒說書在哪裡</b>，要自己去找。</li>
+    <li>步數用完還沒完成就算失敗。</li>
+  </ul>
+  <div class="tbl">
+    <table>
+      <thead><tr><th>關卡</th><th class="num">房間</th><th class="num">物品</th><th class="num">任務最少步數</th><th class="num">步數上限</th></tr></thead>
+      <tbody>
+        <tr><td class="lvl">L2-goal</td><td class="num">5</td><td class="num">10</td><td class="num">5</td><td class="num">20</td></tr>
+        <tr><td class="lvl">L3-goal（較難）</td><td class="num">8</td><td class="num">15</td><td class="num">8</td><td class="num">30</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <h2>結果</h2>
+  <div class="chart" id="c-success"></div>
+  <div class="tbl">
+    <table>
+      <thead><tr><th>關卡 / 方法</th><th class="num">成功率</th><th class="num">分數</th><th class="num">平均步數</th><th class="num">成功的場次平均步數</th></tr></thead>
+      <tbody>
+        <tr class="grp"><td class="lvl" colspan="5">L2-goal（最少 5 步，上限 20 步）</td></tr>
+        <tr><td><span class="dot m"></span>MCTS</td><td class="num">34%</td><td class="num">0.233</td><td class="num">≈ 16.6</td><td class="num">9.9</td></tr>
+        <tr class="l"><td><span class="dot l"></span>Laya + MCTS</td><td class="num">94%</td><td class="num">0.736</td><td class="num">6.5</td><td class="num">5.6</td></tr>
+        <tr class="grp"><td class="lvl" colspan="5">L3-goal（最少 8 步，上限 30 步）</td></tr>
+        <tr><td><span class="dot m"></span>MCTS</td><td class="num">13%</td><td class="num">0.094</td><td class="num">≈ 27.4</td><td class="num">10.2</td></tr>
+        <tr class="l"><td><span class="dot l"></span>Laya + MCTS</td><td class="num">89%</td><td class="num">0.640</td><td class="num">11.0</td><td class="num">8.6</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <ul class="small">
+    <li><b>分數</b>：成功一場得 0.5 + 0.5 × 0.9<sup>步數</sup>（越快越高，8 步約 0.72），失敗得 0；表中是 100 場的平均。</li>
+    <li><b>平均步數</b>：所有場次都算，失敗的場次以步數上限計。MCTS 這一欄由成功率和成功場次步數換算（≈）。</li>
+  </ul>
+  <div class="chart" id="c-moves"></div>
+  <ul>
+    <li><span class="L">Laya + MCTS</span> 不只解得多，也解得快：成功的場次只比最少步數多 0.6 步。</li>
+    <li><span class="M">MCTS</span> 就算成功也常繞遠路：L2-goal 平均 9.9 步，將近最少步數（5 步）的兩倍。</li>
+    <li>地圖越大，<span class="M">MCTS</span> 越吃力：成功率從 34%（5 個房間）掉到 13%（8 個房間）。</li>
+  </ul>
+</section>
+
+<section>
+  <h2>為什麼差這麼多</h2>
+  <div class="flowlbl M">MCTS 怎麼判斷一步好不好</div>
+  <div class="flow m" aria-label="MCTS 的判斷流程">
+    <span class="b">隨機亂走到遊戲結束</span><span class="x">→</span>
+    <span class="b">大地圖裡幾乎不會剛好完成任務</span><span class="x">→</span>
+    <span class="b">每個動作都得到 −1（失敗）</span><span class="x">→</span>
+    <span class="b end">分不出好壞，等於亂選</span>
+  </div>
+  <div class="flowlbl L">Laya + MCTS 怎麼判斷</div>
+  <div class="flow l" aria-label="Laya + MCTS 的判斷流程">
+    <span class="b">Laya 讀目標和畫面</span><span class="x">→</span>
+    <span class="b">給出每個動作的機率和成功估計</span><span class="x">→</span>
+    <span class="b">16 次模擬集中在有希望的動作</span><span class="x">→</span>
+    <span class="b end">選出往目標前進的一步</span>
+  </div>
+
+  <h3>實際看一步：上面那場遊戲的第 1 步</h3>
+  <p class="small">表中是 16 次模擬各分給哪個動作（次數），以及該動作的評分（−1 = 會失敗，+1 = 會成功）。書在東邊的房間，所以「往東走」才對。</p>
+  <div class="tbl">
+    <table class="visits">
+      <thead><tr><th>候選動作</th><th><span class="dot m"></span>MCTS</th><th><span class="dot l"></span>Laya + MCTS</th></tr></thead>
+      <tbody id="visit-rows"></tbody>
+    </table>
+  </div>
+  <ul>
+    <li><span class="M">MCTS</span>：16 次平均分給 7 個動作，<b>全部 −1</b>，沒有任何線索。</li>
+    <li><span class="L">Laya + MCTS</span>：Laya 給「往東走」78% 的機率，13 次模擬都花在這裡，評分 +0.42。</li>
+    <li>整場 30 步裡，<span class="M">MCTS</span> 有 <b>22 步</b>是所有候選動作都得到 −1。</li>
+  </ul>
+</section>
+
+<section>
+  <h2>同一場遊戲，兩種走法</h2>
+  <p>目標：<b>把書放到衣帽間的架子上</b>。書在臥室的書櫃裡，玩家從洗碗間出發。</p>
+  <div class="maps">
+    <figure>
+      <figcaption class="L">Laya + MCTS：4 步完成<small>分數 0.83</small></figcaption>
+      <div id="map-laya"></div>
+    </figure>
+    <figure>
+      <figcaption class="M">MCTS：30 步用完，失敗<small>分數 0</small></figcaption>
+      <div id="map-mcts"></div>
+    </figure>
+  </div>
+  <div class="vs">
+    <div class="l">
+      <div class="name">Laya + MCTS 的 4 步</div>
+      <ol class="moves">
+        <li>往東走，到臥室</li>
+        <li>從書櫃拿書</li>
+        <li>往南走，到衣帽間</li>
+        <li>把書放到架子上 <span class="ok">✓</span></li>
+      </ol>
+      <p class="small">第 3 步 Laya 本來偏向往東（72%），但試過之後「往南」的評分較高（+0.62 對 +0.26），搜尋就改走往南。</p>
+    </div>
+    <div class="m">
+      <div class="name">MCTS 的 30 步</div>
+      <ul>
+        <li>第 1–7 步：把身上 4 樣東西一件件丟掉，在車庫、衣帽間之間進出</li>
+        <li>第 10 步：已經站在書旁邊，卻走開了（拿書的評分也是 −1）</li>
+        <li>第 14–30 步：在沙龍和地下室之間來回 17 次，直到步數用完</li>
+      </ul>
+    </div>
+  </div>
+
+  <h3>同一個模型的 4 場 L3-goal 遊戲</h3>
+  <div class="tbl">
+    <table>
+      <thead><tr><th>目標</th><th><span class="dot m"></span>MCTS</th><th><span class="dot l"></span>Laya + MCTS</th></tr></thead>
+      <tbody>
+        <tr><td>把書放到衣帽間的架子上</td><td class="no">失敗</td><td class="ok">4 步成功</td></tr>
+        <tr><td>撿起餐廳地上的打蛋器</td><td>7 步成功</td><td class="ok">3 步成功</td></tr>
+        <tr><td>用方形鑰匙打開方形箱子的鎖</td><td class="no">失敗</td><td class="ok">7 步成功</td></tr>
+        <tr><td>把詩丟在酒吧的地上</td><td class="no">失敗</td><td class="no">失敗</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="small">Laya + MCTS 也不是每場都會成功：最後一場兩邊都沒解出來。</p>
+</section>
+
+<section>
+  <h2>前提：Laya 要先訓練</h2>
+  <div class="chart" id="c-train"></div>
+  <ul>
+    <li>沒訓練過的 Laya 沒看過這種遊戲，加上搜尋反而<b>比 MCTS 還差</b>。</li>
+    <li>先在 TextWorld 上訓練（看示範、再自己玩很多場、從結果學習），Laya 的判斷才派得上用場。</li>
+  </ul>
+  <div class="callout">
+    <div class="tag">代價</div>
+    <ul>
+      <li>訓練要用 GPU，MCTS 不用訓練。</li>
+      <li>Laya + MCTS 每走一步約 0.2 秒（L2-goal、GPU），其中近八成的時間花在遊戲模擬器，Laya 本身約占兩成。MCTS 這邊沒有量時間。</li>
+    </ul>
+  </div>
+</section>
+
+<section>
+  <h2>實驗設定</h2>
+  <ul>
+    <li><b>關卡</b>：L2-goal、L3-goal，各 100 場訓練時沒看過的遊戲。</li>
+    <li><span class="M">MCTS</span>：每步 16 次模擬，用 rollout（隨機亂走到底）評分。</li>
+    <li><span class="L">Laya + MCTS</span>：每步 16 次模擬，用訓練完成的 Laya 評分；3 次獨立訓練的平均（成功率差距 ±1–3%）。</li>
+    <li>「同一場遊戲」與「4 場遊戲」的例子來自 L3-goal 其中一次訓練的模型。</li>
+  </ul>
+</section>
+
+<section>
+  <h2>名詞小辭典</h2>
+  <dl class="gloss">
+    <dt>MCTS<small>Monte Carlo Tree Search</small></dt><dd>蒙地卡羅樹搜尋。每走一步前，先在腦中模擬很多種走法，再選結果最好的一步。</dd>
+    <dt>模擬<small>simulation</small></dt><dd>一次在腦中往前試走。本頁兩種方法每一步都做 16 次。</dd>
+    <dt>rollout</dt><dd>從某個局面開始隨機選動作，一直走到遊戲結束，用成功或失敗當作這個局面的評分。</dd>
+    <dt>Laya</dt><dd>一個小型的決策模型：讀一段文字，回答選擇題或是非題。</dd>
+    <dt>policy<small>策略</small></dt><dd>Laya 回答「下一步選哪個」：給每個候選動作一個機率。</dd>
+    <dt>value<small>價值</small></dt><dd>Laya 回答「照這樣下去會成功嗎」：換算成 −1（會失敗）到 +1（會成功）的評分。</dd>
+    <dt>評分</dt><dd>搜尋時，一個動作在所有試走中得到的平均分數，介於 −1 到 +1。</dd>
+    <dt>TextWorld</dt><dd>微軟開發的文字冒險遊戲產生器，可以自動產生大量不同地圖和任務的遊戲。</dd>
+  </dl>
+</section>
+
+<footer>
+  資料來源：專案報告 <code>docs/project_report.md</code> §4.5（GPU 第二輪，100 場測試遊戲；Laya + MCTS 為 self-play 訓練後的模型，3 個 seed 平均）與 §4.7（速度）；單場範例來自 L3-goal control-s0 模型的搜尋視覺化。
+</footer>
+</div>
+
+<script>
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+function barChart(id, cfg) {
+  const el = document.getElementById(id);
+  const W = 640, H = cfg.h || 260, padL = 8, padR = 8, padT = 26, padB = 34;
+  const max = cfg.max;
+  const y = v => padT + (max - v) / max * (H - padT - padB);
+  const gW = (W - padL - padR) / cfg.groups.length, n = cfg.series.length, gap = 4;
+  const bw = Math.min(64, (gW * 0.72 - (n - 1) * gap) / n);
+  let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${cfg.title}">`;
+  cfg.groups.forEach((g, gi) => {
+    const total = n * bw + (n - 1) * gap, x0 = padL + gi * gW + (gW - total) / 2;
+    cfg.series.forEach((se, si) => {
+      const v = se.values[gi], x = x0 + si * (bw + gap), y1 = y(v);
+      s += `<rect x="${x}" y="${y1}" width="${bw}" height="${Math.max(y(0) - y1, 1)}" rx="3" fill="var(${se.color})"><title>${g}・${se.name}：${cfg.fmt(v)}</title></rect>`;
+      s += `<text class="val" x="${x + bw / 2}" y="${y1 - 7}">${cfg.fmt(v)}</text>`;
+    });
+    if (cfg.ref) {
+      const r = cfg.ref.values[gi], ry = y(r);
+      s += `<line class="ref" x1="${x0 - 10}" x2="${x0 + total + 10}" y1="${ry}" y2="${ry}"><title>${g}・${cfg.ref.name}：${r}</title></line>`;
+    }
+    s += `<text class="cat" x="${padL + gi * gW + gW / 2}" y="${H - 10}">${g}</text>`;
+  });
+  s += `<line class="axis" x1="${padL}" x2="${W - padR}" y1="${y(0)}" y2="${y(0)}"/></svg>`;
+  let legend = cfg.series.map(se => `<span><i style="background:var(${se.color})"></i>${se.name}</span>`).join("");
+  if (cfg.ref) legend += `<span><i style="background:none;border-top:2px dashed var(--muted);height:0;border-radius:0;vertical-align:3px"></i>${cfg.ref.name}</span>`;
+  el.innerHTML = `<div class="ttl">${cfg.title}</div>${cfg.sub ? `<div class="sub">${cfg.sub}</div>` : ""}<div class="legend">${legend}</div>${s}`;
+}
+const pct = v => Math.round(v * 100) + "%";
+barChart("c-success", {
+  title: "成功率", sub: "100 場測試遊戲",
+  groups: ["L2-goal", "L3-goal（較難）"], max: 1, fmt: pct,
+  series: [
+    { name: "MCTS", color: "--mcts", values: [0.34, 0.13] },
+    { name: "Laya + MCTS", color: "--laya", values: [0.94, 0.89] },
+  ],
+});
+barChart("c-moves", {
+  title: "成功的場次平均走幾步", sub: "越接近虛線（任務最少步數）越好",
+  groups: ["L2-goal", "L3-goal（較難）"], max: 12, fmt: v => v.toFixed(1), h: 240,
+  series: [
+    { name: "MCTS", color: "--mcts", values: [9.9, 10.2] },
+    { name: "Laya + MCTS", color: "--laya", values: [5.6, 8.6] },
+  ],
+  ref: { name: "任務最少步數", values: [5, 8] },
+});
+barChart("c-train", {
+  title: "訓練前後的 Laya + MCTS", sub: "成功率，100 場測試遊戲",
+  groups: ["L2-goal", "L3-goal（較難）"], max: 1, fmt: pct,
+  series: [
+    { name: "MCTS", color: "--mcts", values: [0.34, 0.13] },
+    { name: "Laya（未訓練）+ MCTS", color: "--laya-soft", values: [0.19, 0.07] },
+    { name: "Laya（訓練後）+ MCTS", color: "--laya", values: [0.94, 0.89] },
+  ],
+});
+
+// First decision of the example game (L3-goal, control-s0 checkpoint): visits out of 16 and mean score per action.
+const step1 = [
+  ["丟掉幼蟲", "drop fly larva", [3, -1], [0, null]],
+  ["丟掉起司鍋", "drop fondue", [3, -1], [1, 0.07]],
+  ["丟掉帽子", "drop hat", [2, -1], [0, null]],
+  ["丟掉筆電", "drop laptop", [2, -1], [0, null]],
+  ["吃掉起司鍋", "eat fondue", [2, -1], [1, -0.01]],
+  ["往東走（書在這邊）", "go east", [2, -1], [13, 0.42], true],
+  ["往南走", "go south", [2, -1], [1, -0.07]],
+];
+const sc = v => v == null ? "沒試" : (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(v).toFixed(2);
+const cell = (k, [n, q]) => `<div class="bar ${k}"><i style="width:${n * 0.3}em"></i><span><b>${n}</b> 次 · ${sc(q)}</span></div>`;
+document.getElementById("visit-rows").innerHTML = step1.map(([zh, en, m, l, hit]) =>
+  `<tr class="${hit ? "hit" : ""}"><td class="act">${zh}<small>${en}</small></td><td>${cell("m", m)}</td><td>${cell("l", l)}</td></tr>`).join("");
+
+// Example-game map. North is up; each room sits on the game's own grid.
+const rooms = {
+  "cubicle": [1, 1, "小隔間"], "parlor": [2, 1, "會客室"],
+  "dish-pit": [0, 0, "洗碗間"], "bedchamber": [1, 0, "臥室"], "salon": [2, 0, "沙龍"],
+  "garage": [0, -1, "車庫"], "closet": [1, -1, "衣帽間"], "basement": [2, -1, "地下室"],
+};
+const edges = [["basement","closet"],["basement","salon"],["bedchamber","closet"],["bedchamber","dish-pit"],["bedchamber","salon"],["closet","garage"],["cubicle","parlor"],["dish-pit","garage"],["parlor","salon"]];
+const tags = { "dish-pit": "起點", "bedchamber": "書", "closet": "架子（終點）" };
+const CW = 112, CH = 84, RW = 84, RH = 40, OX = 14, OY = 10;
+const cx = r => OX + rooms[r][0] * CW + CW / 2, cy = r => OY + (1 - rooms[r][1]) * CH + CH / 2;
+function drawMap(id, path, color, counts, tagOv) {
+  const tg = Object.assign({}, tags, tagOv || {});
+  const W = OX * 2 + CW * 3, H = OY * 2 + CH * 3;
+  let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="地圖與行走路線">`;
+  edges.forEach(([a, b]) => { s += `<line x1="${cx(a)}" y1="${cy(a)}" x2="${cx(b)}" y2="${cy(b)}" stroke="var(--line)" stroke-width="6" stroke-linecap="round"/>`; });
+  path.forEach(([a, b, w]) => { s += `<line x1="${cx(a)}" y1="${cy(a)}" x2="${cx(b)}" y2="${cy(b)}" stroke="var(${color})" stroke-width="${w}" stroke-linecap="round"/>`; });
+  Object.keys(rooms).forEach(r => {
+    const x = cx(r) - RW / 2, y = cy(r) - RH / 2, key = r in tg;
+    s += `<rect x="${x}" y="${y}" width="${RW}" height="${RH}" rx="8" fill="var(--bg)" stroke="${key ? "var(--fg)" : "var(--ctx)"}" stroke-width="${key ? 1.6 : 1}"/>`;
+    s += `<text x="${cx(r)}" y="${cy(r) + (r in tg ? -1 : 5)}" text-anchor="middle">${rooms[r][2]}</text>`;
+    if (r in tg) s += `<text class="tag" x="${cx(r)}" y="${cy(r) + 14}" text-anchor="middle">${tg[r]}</text>`;
+  });
+  (counts || []).forEach(([a, b, t, dx, dy]) => {
+    s += `<text class="cnt" x="${(cx(a) + cx(b)) / 2 + dx}" y="${(cy(a) + cy(b)) / 2 + dy}" text-anchor="middle" fill="var(${color === "--laya" ? "--laya-ink" : "--mcts-ink"})">${t}</text>`;
+  });
+  document.getElementById(id).innerHTML = s + "</svg>";
+}
+drawMap("map-laya", [["dish-pit", "bedchamber", 5], ["bedchamber", "closet", 5]], "--laya",
+  [["dish-pit", "bedchamber", "①", 0, -9], ["bedchamber", "closet", "③", 14, 4]],
+  { "bedchamber": "② 拿書", "closet": "④ 放上架子" });
+drawMap("map-mcts", [["dish-pit", "garage", 3], ["garage", "closet", 3], ["dish-pit", "bedchamber", 4], ["bedchamber", "salon", 3], ["salon", "basement", 9]], "--mcts",
+  [["dish-pit", "bedchamber", "×3", 0, -9], ["garage", "closet", "×2", 0, -9], ["dish-pit", "garage", "×2", -16, 4], ["salon", "basement", "×17", 22, 4]]);
+</script>
+
+</body>
+</html>
