@@ -153,7 +153,12 @@ tar czf ablation_results.tgz runs/ablation/selfplay_textworld_v2/summary.md runs
 
 ## 附錄：推論速度比較（greedy vs PUCT）
 
-`scripts/bench_inference.py` 讓同一個模型在同一批測試遊戲上，一次一局地（模擬實際部署）分別用 greedy 與不同模擬次數的 PUCT 玩，回報成績與速度：每局秒數、每步延遲（平均、p50、p95）、相對 greedy 的倍數、每步模型呼叫次數與列數，以及時間花在模型（tokenization + 前向計算）和環境（TextWorld 重播）的比例。每個方法使用新的環境、每局清空模型快取，前幾局只暖機不計時。
+`scripts/bench_inference.py` 讓同一個模型在同一批測試遊戲上，一次一局地（模擬實際部署）分別用 greedy、不同模擬次數的 PUCT，以及**隨機 rollout 搜尋**（`rollout-puct`：不用 Laya，先驗均勻、葉節點的價值由隨機玩到底估計，也就是傳統 MCTS，實驗裡的 `rollout-puct16` 基準）玩，回報成績與速度：每局秒數、每步延遲（平均、p50、p95）、相對 greedy 的倍數、每步評估呼叫次數、Laya 列數、環境步數，以及時間花在葉節點評估（Laya 方法是 tokenization + 前向計算；rollout 是隨機玩到底）和環境（TextWorld 重播、ALFWorld 還原）的比例。rollout 的環境步驟同時算在兩者，所以兩個比例會重疊。每個方法使用新的環境、每局清空模型快取、計時前先載入遊戲，前幾局只暖機不計時。
+
+- `--rollout-sims 16 64`：rollout 的模擬次數（預設 16；不給數字則不跑 rollout）
+- `--rollouts N`：每個葉節點的隨機玩到底次數（預設沿用設定檔基準，否則 1）
+
+rollout 很慢：每次模擬都要玩到遊戲結束（TextWorld L2-goal 最多 20 步、ALFWorld 50 步）。本機 CPU 上 L2-goal 的 rollout-puct16 每步約 2 秒、ALFWorld 的 rollout-puct4 每步約 3 秒，幾乎全是環境時間；`--problems` 可以先設小一點。
 
 ```bash
 # 已訓練的模型（實驗目錄裡的 checkpoints/final）
